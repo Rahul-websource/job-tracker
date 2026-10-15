@@ -1,5 +1,6 @@
 const express = require("express");
 const healthRoutes = require("./routes/health.routes");
+const companiesRoutes = require("./routes/companies.routes");
 
 const app = express();
 
@@ -14,7 +15,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/health", healthRoutes);
-
+app.use("/api/v1/companies", companiesRoutes);
 // Handle unknown routes.
 app.use((req, res) => {
   res.status(404).json({

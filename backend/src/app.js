@@ -25,15 +25,26 @@ app.use((req, res) => {
 
 // Central error handler.
 app.use((err, req, res, next) => {
-  console.error("Unhandled application error:", err.message);
-
   if (res.headersSent) {
     return next(err);
   }
 
-  res.status(500).json({
+  // Malformed JSON sent by the client.
+  if (
+    err instanceof SyntaxError &&
+    err.status === 400 &&
+    "body" in err
+  ) {
+    return res.status(400).json({
+      error: "Invalid JSON request body",
+    });
+  }
+
+  // Log unexpected server-side errors.
+  console.error("Unhandled application error:", err.message);
+
+  return res.status(500).json({
     error: "Internal server error",
   });
 });
-
 module.exports = app;

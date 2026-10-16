@@ -136,7 +136,37 @@ async function createJob(req, res, next) {
     return next(error);
   }
 }
+async function getJobs(req, res, next) {
+  try {
+    const query = `
+      SELECT
+        jobs.id,
+        jobs.company_id,
+        companies.name AS company_name,
+        jobs.title,
+        jobs.description,
+        jobs.location,
+        jobs.employment_type,
+        jobs.job_url,
+        jobs.created_at,
+        jobs.updated_at
+      FROM jobs
+      INNER JOIN companies
+        ON jobs.company_id = companies.id
+      ORDER BY jobs.created_at DESC
+    `;
 
+    const result = await pool.query(query);
+
+    return res.status(200).json({
+      count: result.rows.length,
+      jobs: result.rows,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 module.exports = {
   createJob,
+  getJobs,
 };

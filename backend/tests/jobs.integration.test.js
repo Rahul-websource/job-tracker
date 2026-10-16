@@ -152,3 +152,24 @@ test("POST /api/v1/jobs creates a job in PostgreSQL", async () => {
     );
   }
 });
+test("GET /api/v1/jobs returns jobs with company details", async () => {
+  const response = await fetch(`${baseUrl}/api/v1/jobs`);
+
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+
+  assert.ok(Array.isArray(body.jobs));
+  assert.equal(body.count, body.jobs.length);
+
+  if (body.jobs.length > 0) {
+    const job = body.jobs[0];
+
+    assert.ok(job.id);
+    assert.ok(job.company_id);
+    assert.equal(typeof job.company_name, "string");
+    assert.ok(job.company_name.length > 0);
+    assert.equal(typeof job.title, "string");
+    assert.ok(job.created_at);
+  }
+});

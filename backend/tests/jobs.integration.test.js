@@ -267,3 +267,120 @@ test("GET /api/v1/jobs filters jobs by location", async () => {
     );
   }
 });
+
+test("PATCH /api/v1/jobs/:id updates an existing job", async () => {
+  const title = `Update Test Job ${randomUUID()}`;
+  let jobId;
+
+  try {
+    // Create a temporary job for this test.
+    const insertResult = await pool.query(
+      `INSERT INTO jobs (
+         company_id,
+         title,
+         location,
+         employment_type
+       )
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
+      ["1", title, "Noida", "Internship"]
+    );
+
+    jobId = insertResult.rows[0].id;
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/jobs/${jobId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: "Updated Software Engineer",
+          location: "Gurugram",
+        }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+
+    const body = await response.json();
+
+    assert.equal(body.message, "Job updated successfully");
+    assert.equal(body.job.title, "Updated Software Engineer");
+    assert.equal(body.job.location, "Gurugram");
+    assert.equal(body.job.employment_type, "Internship");
+    assert.ok(body.job.updated_at);
+  } finally {
+    if (jobId) {
+      await pool.query(
+        "DELETE FROM jobs WHERE id = $1",
+        [jobId]
+      );
+    }
+  }
+});
+
+test("PATCH /api/v1/jobs/:id returns 404 for a missing job", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs/999999999`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "Updated Software Engineer",
+      }),
+    }
+  );
+
+  assert.equal(response.status, 404);
+
+  const body = await response.json();
+
+  assert.equal(body.error, "Job not found");
+});
+
+test("PATCH /api/v1/jobs/:id rejects an empty request body", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs/1`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    }
+  );
+
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+
+  assert.equal(
+    body.error,
+    "At least one field must be provided"
+  );
+});
+
+test("PATCH /api/v1/jobs/:id rejects an invalid job ID", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs/invalid`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "Updated Software Engineer",
+      }),
+    }
+  );
+
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+
+  assert.equal(body.error, "A valid job ID is required");
+});

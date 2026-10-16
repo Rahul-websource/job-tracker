@@ -13,7 +13,7 @@ async function createJob(req, res, next) {
       job_url,
     } = req.body;
 
-    // 1. Validate company_id.
+    // Validate company_id.
     if (
       company_id === undefined ||
       company_id === null ||
@@ -26,7 +26,7 @@ async function createJob(req, res, next) {
       });
     }
 
-    // 2. Validate job title.
+    // Validate job title.
     if (typeof title !== "string" || !title.trim()) {
       return res.status(400).json({
         error: "Job title is required",
@@ -39,7 +39,7 @@ async function createJob(req, res, next) {
       });
     }
 
-    // 3. Validate optional text fields.
+    // Validate optional text fields.
     if (description != null && typeof description !== "string") {
       return res.status(400).json({
         error: "Description must be a string",
@@ -68,7 +68,7 @@ async function createJob(req, res, next) {
       });
     }
 
-    // 4. Validate job URL.
+    // Validate job URL.
     if (job_url != null && job_url !== "") {
       if (typeof job_url !== "string") {
         return res.status(400).json({
@@ -89,7 +89,6 @@ async function createJob(req, res, next) {
       }
     }
 
-    // 5. Insert the job using a parameterized query.
     const query = `
       INSERT INTO jobs (
         company_id,
@@ -128,7 +127,6 @@ async function createJob(req, res, next) {
       job: result.rows[0],
     });
   } catch (error) {
-    // PostgreSQL foreign-key violation.
     if (error.code === "23503") {
       return res.status(400).json({
         error: "The specified company does not exist",
@@ -151,7 +149,7 @@ async function getJobs(req, res, next) {
       limit = "10",
     } = req.query;
 
-    // 1. Validate page.
+    // Validate page.
     if (
       !/^\d+$/.test(page) ||
       !Number.isSafeInteger(Number(page)) ||
@@ -162,7 +160,7 @@ async function getJobs(req, res, next) {
       });
     }
 
-    // 2. Validate limit.
+    // Validate limit.
     if (
       !/^\d+$/.test(limit) ||
       !Number.isSafeInteger(Number(limit)) ||
@@ -174,13 +172,13 @@ async function getJobs(req, res, next) {
       });
     }
 
-    // 3. Validate optional filters.
+    // Validate filters.
     for (const [field, value] of Object.entries({
       location,
       employment_type,
       search,
     })) {
-      if (typeof value !== "undefined" && typeof value !== "string") {
+      if (value !== undefined && typeof value !== "string") {
         return res.status(400).json({
           error: `${field} must be a string`,
         });
@@ -203,7 +201,7 @@ async function getJobs(req, res, next) {
       });
     }
 
-    // 4. Build parameterized filters.
+    // Build parameterized filters.
     const conditions = [];
     const values = [];
 
@@ -226,7 +224,7 @@ async function getJobs(req, res, next) {
       ? `WHERE ${conditions.join(" AND ")}`
       : "";
 
-    // 5. Count all jobs matching the filters.
+    // Count matching jobs.
     const countQuery = `
       SELECT COUNT(*) AS total
       FROM jobs
@@ -236,7 +234,7 @@ async function getJobs(req, res, next) {
     const countResult = await pool.query(countQuery, values);
     const totalJobs = Number(countResult.rows[0].total);
 
-    // 6. Fetch the requested page.
+    // Fetch the requested page.
     const jobsQuery = `
       SELECT
         jobs.id,
@@ -264,7 +262,6 @@ async function getJobs(req, res, next) {
       offset,
     ]);
 
-    // 7. Return jobs and pagination metadata.
     return res.status(200).json({
       count: jobsResult.rows.length,
       pagination: {
@@ -280,7 +277,211 @@ async function getJobs(req, res, next) {
   }
 }
 
+// PATCH /api/v1/jobs/:id
+// Update selected fields of an existing job.
+async function updateJob(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // 1. Validate job ID.
+    if (
+      !/^\d+$/.test(id) ||
+      !Number.isSafeInteger(Number(id)) ||
+      Number(id) <= 0
+    ) {
+      return res.status(400).json({
+        error: "A valid job ID is required",
+      });
+    }
+
+    const {
+      title,
+      description,
+      location,
+      employment_type,
+      job_url,
+    } = req.body;
+
+    // 2. Require at least one update field.
+    const allowedFields = [
+      "title",
+      "description",
+      "location",
+      "employment_type",
+      "job_url",
+    ];
+
+    const suppliedFields = Object.keys(req.body);
+
+    if (suppliedFields.length === 0) {
+      return res.status(400).json({
+        error: "At least one field must be provided",
+      });
+    }
+
+    // 3. Reject fields that cannot be updated through this endpoint.
+    const unsupportedFields = suppliedFields.filter(
+      (field) => !allowedFields.includes(field)
+    );
+
+    if (unsupportedFields.length > 0) {
+      return res.status(400).json({
+        error: `Unsupported field: ${unsupportedFields[0]}`,
+      });
+    }
+
+    // 4. Validate title when supplied.
+    if (
+      Object.hasOwn(req.body, "title") &&
+      (typeof title !== "string" || !title.trim())
+    ) {
+      return res.status(400).json({
+        error: "Job title must be a non-empty string",
+      });
+    }
+
+    if (title !== undefined && title.trim().length > 200) {
+      return res.status(400).json({
+        error: "Job title must not exceed 200 characters",
+      });
+    }
+
+    // 5. Validate optional text fields.
+    if (
+      Object.hasOwn(req.body, "description") &&
+      description !== null &&
+      typeof description !== "string"
+    ) {
+      return res.status(400).json({
+        error: "Description must be a string or null",
+      });
+    }
+
+    if (
+      Object.hasOwn(req.body, "location") &&
+      location !== null &&
+      typeof location !== "string"
+    ) {
+      return res.status(400).json({
+        error: "Location must be a string or null",
+      });
+    }
+
+    if (
+      typeof location === "string" &&
+      location.trim().length > 200
+    ) {
+      return res.status(400).json({
+        error: "Location must not exceed 200 characters",
+      });
+    }
+
+    if (
+      Object.hasOwn(req.body, "employment_type") &&
+      employment_type !== null &&
+      typeof employment_type !== "string"
+    ) {
+      return res.status(400).json({
+        error: "Employment type must be a string or null",
+      });
+    }
+
+    if (
+      typeof employment_type === "string" &&
+      employment_type.trim().length > 50
+    ) {
+      return res.status(400).json({
+        error: "Employment type must not exceed 50 characters",
+      });
+    }
+
+    // 6. Validate job URL when supplied.
+    if (
+      Object.hasOwn(req.body, "job_url") &&
+      job_url !== null &&
+      job_url !== ""
+    ) {
+      if (typeof job_url !== "string") {
+        return res.status(400).json({
+          error: "Job URL must be a string or null",
+        });
+      }
+
+      try {
+        const parsedUrl = new URL(job_url);
+
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          throw new Error("Unsupported URL protocol");
+        }
+      } catch {
+        return res.status(400).json({
+          error: "Job URL must be a valid HTTP or HTTPS URL",
+        });
+      }
+    }
+
+    // 7. Build UPDATE dynamically using an allowlist.
+    const values = [];
+    const assignments = [];
+
+    for (const field of allowedFields) {
+      if (Object.hasOwn(req.body, field)) {
+        let value = req.body[field];
+
+        if (typeof value === "string") {
+          value = value.trim();
+
+          if (value === "" && field !== "title") {
+            value = null;
+          }
+        }
+
+        values.push(value);
+        assignments.push(`${field} = $${values.length}`);
+      }
+    }
+
+    // Always update the modification timestamp.
+    assignments.push("updated_at = NOW()");
+
+    values.push(id);
+
+    const query = `
+      UPDATE jobs
+      SET ${assignments.join(", ")}
+      WHERE id = $${values.length}
+      RETURNING
+        id,
+        company_id,
+        title,
+        description,
+        location,
+        employment_type,
+        job_url,
+        created_at,
+        updated_at
+    `;
+
+    const result = await pool.query(query, values);
+
+    // 8. If no row was updated, the job does not exist.
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: "Job not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Job updated successfully",
+      job: result.rows[0],
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createJob,
   getJobs,
+  updateJob,
 };

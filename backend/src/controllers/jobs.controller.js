@@ -1,5 +1,7 @@
 const pool = require("../config/db");
 
+// POST /api/v1/jobs
+// Create a new job.
 async function createJob(req, res, next) {
   try {
     const {
@@ -11,7 +13,7 @@ async function createJob(req, res, next) {
       job_url,
     } = req.body;
 
-    // 1. Company ID is required.
+    // 1. Validate company_id.
     if (
       company_id === undefined ||
       company_id === null ||
@@ -24,7 +26,7 @@ async function createJob(req, res, next) {
       });
     }
 
-    // 2. Job title is required.
+    // 2. Validate job title.
     if (typeof title !== "string" || !title.trim()) {
       return res.status(400).json({
         error: "Job title is required",
@@ -66,7 +68,7 @@ async function createJob(req, res, next) {
       });
     }
 
-    // 4. Validate the optional job URL.
+    // 4. Validate job URL.
     if (job_url != null && job_url !== "") {
       if (typeof job_url !== "string") {
         return res.status(400).json({
@@ -87,7 +89,7 @@ async function createJob(req, res, next) {
       }
     }
 
-    // 5. Insert the job using a parameterized SQL query.
+    // 5. Insert the job using a parameterized query.
     const query = `
       INSERT INTO jobs (
         company_id,
@@ -136,9 +138,106 @@ async function createJob(req, res, next) {
     return next(error);
   }
 }
+
+// GET /api/v1/jobs
+// List jobs with filtering and pagination.
 async function getJobs(req, res, next) {
   try {
-    const query = `
+    const {
+      location,
+      employment_type,
+      search,
+      page = "1",
+      limit = "10",
+    } = req.query;
+
+    // 1. Validate page.
+    if (
+      !/^\d+$/.test(page) ||
+      !Number.isSafeInteger(Number(page)) ||
+      Number(page) < 1
+    ) {
+      return res.status(400).json({
+        error: "page must be a positive integer",
+      });
+    }
+
+    // 2. Validate limit.
+    if (
+      !/^\d+$/.test(limit) ||
+      !Number.isSafeInteger(Number(limit)) ||
+      Number(limit) < 1 ||
+      Number(limit) > 100
+    ) {
+      return res.status(400).json({
+        error: "limit must be an integer between 1 and 100",
+      });
+    }
+
+    // 3. Validate optional filters.
+    for (const [field, value] of Object.entries({
+      location,
+      employment_type,
+      search,
+    })) {
+      if (typeof value !== "undefined" && typeof value !== "string") {
+        return res.status(400).json({
+          error: `${field} must be a string`,
+        });
+      }
+
+      if (typeof value === "string" && value.trim().length > 200) {
+        return res.status(400).json({
+          error: `${field} must not exceed 200 characters`,
+        });
+      }
+    }
+
+    const pageNumber = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNumber - 1) * pageSize;
+
+    if (!Number.isSafeInteger(offset)) {
+      return res.status(400).json({
+        error: "Requested page is too large",
+      });
+    }
+
+    // 4. Build parameterized filters.
+    const conditions = [];
+    const values = [];
+
+    if (location?.trim()) {
+      values.push(`%${location.trim()}%`);
+      conditions.push(`jobs.location ILIKE $${values.length}`);
+    }
+
+    if (employment_type?.trim()) {
+      values.push(employment_type.trim());
+      conditions.push(`jobs.employment_type ILIKE $${values.length}`);
+    }
+
+    if (search?.trim()) {
+      values.push(`%${search.trim()}%`);
+      conditions.push(`jobs.title ILIKE $${values.length}`);
+    }
+
+    const whereClause = conditions.length
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
+
+    // 5. Count all jobs matching the filters.
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM jobs
+      ${whereClause}
+    `;
+
+    const countResult = await pool.query(countQuery, values);
+    const totalJobs = Number(countResult.rows[0].total);
+
+    // 6. Fetch the requested page.
+    const jobsQuery = `
       SELECT
         jobs.id,
         jobs.company_id,
@@ -153,19 +252,34 @@ async function getJobs(req, res, next) {
       FROM jobs
       INNER JOIN companies
         ON jobs.company_id = companies.id
-      ORDER BY jobs.created_at DESC
+      ${whereClause}
+      ORDER BY jobs.created_at DESC, jobs.id DESC
+      LIMIT $${values.length + 1}
+      OFFSET $${values.length + 2}
     `;
 
-    const result = await pool.query(query);
+    const jobsResult = await pool.query(jobsQuery, [
+      ...values,
+      pageSize,
+      offset,
+    ]);
 
+    // 7. Return jobs and pagination metadata.
     return res.status(200).json({
-      count: result.rows.length,
-      jobs: result.rows,
+      count: jobsResult.rows.length,
+      pagination: {
+        page: pageNumber,
+        limit: pageSize,
+        totalJobs,
+        totalPages: Math.ceil(totalJobs / pageSize),
+      },
+      jobs: jobsResult.rows,
     });
   } catch (error) {
     return next(error);
   }
 }
+
 module.exports = {
   createJob,
   getJobs,

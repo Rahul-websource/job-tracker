@@ -173,3 +173,97 @@ test("GET /api/v1/jobs returns jobs with company details", async () => {
     assert.ok(job.created_at);
   }
 });
+
+test("GET /api/v1/jobs returns pagination metadata", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs?page=1&limit=5`
+  );
+
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+
+  assert.equal(body.pagination.page, 1);
+  assert.equal(body.pagination.limit, 5);
+  assert.ok(body.pagination.totalJobs >= 0);
+  assert.ok(body.pagination.totalPages >= 0);
+  assert.ok(body.count <= 5);
+  assert.equal(body.count, body.jobs.length);
+});
+
+test("GET /api/v1/jobs rejects an invalid page", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs?page=0`
+  );
+
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+
+  assert.equal(
+    body.error,
+    "page must be a positive integer"
+  );
+});
+
+test("GET /api/v1/jobs rejects a limit greater than 100", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs?limit=101`
+  );
+
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+
+  assert.equal(
+    body.error,
+    "limit must be an integer between 1 and 100"
+  );
+});
+
+test("GET /api/v1/jobs filters jobs by location", async () => {
+  const title = `Filtering Test Job ${randomUUID()}`;
+
+  try {
+    await pool.query(
+      `INSERT INTO jobs (
+         company_id,
+         title,
+         location,
+         employment_type
+       )
+       VALUES ($1, $2, $3, $4)`,
+      ["1", title, "Noida", "Internship"]
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/jobs?location=Noida&search=${encodeURIComponent(title)}`
+    );
+
+    assert.equal(response.status, 200);
+
+    const body = await response.json();
+
+    assert.ok(
+      body.jobs.some(
+        (job) =>
+          job.title === title &&
+          job.location === "Noida"
+      )
+    );
+
+    assert.ok(
+      body.jobs.every(
+        (job) =>
+          job.location &&
+          job.location.toLowerCase().includes("noida")
+      )
+    );
+  } finally {
+    await pool.query(
+      `DELETE FROM jobs
+       WHERE company_id = $1 AND title = $2`,
+      ["1", title]
+    );
+  }
+});

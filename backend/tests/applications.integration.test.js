@@ -572,3 +572,145 @@ test("PATCH /api/v1/applications/:id updates follow-up date", async () => {
     }
   }
 });
+// GET /api/v1/applications/:id/history integration tests
+
+test("GET application history returns status changes in chronological order", async () => {
+  const uniqueId = randomUUID();
+  let jobId;
+  let applicationId;
+
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title, location, employment_type)
+       VALUES (1, $1, $2, $3)
+       RETURNING id`,
+      [`Application History ${uniqueId}`, "Delhi", "Full-time"]
+    );
+
+    jobId = jobResult.rows[0].id;
+
+    const createResponse = await fetch(
+      `${baseUrl}/api/v1/applications`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: 1,
+          job_id: jobId,
+          status: "applied",
+        }),
+      }
+    );
+
+    assert.equal(createResponse.status, 201);
+    applicationId = (await createResponse.json()).application.id;
+
+    const updateResponse = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "interview" }),
+      }
+    );
+
+    assert.equal(updateResponse.status, 200);
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}/history`
+    );
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(String(body.application_id), String(applicationId));
+    assert.equal(body.count, 2);
+    assert.equal(body.history[0].old_status, null);
+    assert.equal(body.history[0].new_status, "applied");
+    assert.equal(body.history[1].old_status, "applied");
+    assert.equal(body.history[1].new_status, "interview");
+
+    assert.ok(
+      new Date(body.history[0].changed_at) <=
+      new Date(body.history[1].changed_at)
+    );
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [
+        applicationId,
+      ]);
+    }
+
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});
+
+test("GET application history rejects an invalid application ID", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/applications/invalid/history`
+  );
+
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /application id/i);
+});
+
+test("GET application history returns 404 for a missing application", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/applications/999999999/history`
+  );
+
+  const body = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.match(body.error, /not found/i);
+});
+
+test("GET application history returns an empty array when history is empty", async () => {
+  const uniqueId = randomUUID();
+  let jobId;
+  let applicationId;
+
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title)
+       VALUES (1, $1)
+       RETURNING id`,
+      [`Application Empty History ${uniqueId}`]
+    );
+
+    jobId = jobResult.rows[0].id;
+
+    const applicationResult = await pool.query(
+      `INSERT INTO applications (user_id, job_id, status)
+       VALUES (1, $1, $2)
+       RETURNING id`,
+      [jobId, "applied"]
+    );
+
+    applicationId = applicationResult.rows[0].id;
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}/history`
+    );
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.count, 0);
+    assert.deepEqual(body.history, []);
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [
+        applicationId,
+      ]);
+    }
+
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});

@@ -451,9 +451,62 @@ async function updateApplicationStatus(req, res, next) {
     }
   }
 }
+// GET /api/v1/applications/:id/history
+// Retrieve the status history of an application in chronological order.
+async function getApplicationHistory(req, res, next) {
+  const { id } = req.params;
 
+  // Validate application ID.
+  if (
+    !/^[1-9]\d*$/.test(id) ||
+    !Number.isSafeInteger(Number(id))
+  ) {
+    return res.status(400).json({
+      error: "A valid application ID is required",
+    });
+  }
+
+  try {
+    // Check whether the application exists.
+    const applicationResult = await pool.query(
+      `SELECT id
+       FROM applications
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (applicationResult.rows.length === 0) {
+      return res.status(404).json({
+        error: "Application not found",
+      });
+    }
+
+    // Fetch the application's status history, oldest entry first.
+    const historyResult = await pool.query(
+      `SELECT
+         id,
+         old_status,
+         new_status,
+         changed_at,
+         notes
+       FROM status_history
+       WHERE application_id = $1
+       ORDER BY changed_at ASC, id ASC`,
+      [id]
+    );
+
+    return res.status(200).json({
+      application_id: applicationResult.rows[0].id,
+      count: historyResult.rows.length,
+      history: historyResult.rows,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
 module.exports = {
   createApplication,
   getApplications,
   updateApplicationStatus,
+  getApplicationHistory,
 };

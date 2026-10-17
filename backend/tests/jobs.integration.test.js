@@ -384,3 +384,80 @@ test("PATCH /api/v1/jobs/:id rejects an invalid job ID", async () => {
 
   assert.equal(body.error, "A valid job ID is required");
 });
+
+// DELETE /api/v1/jobs/:id integration tests
+
+test("DELETE /api/v1/jobs/:id deletes an existing job", async () => {
+  const title = `Delete Test Job ${randomUUID()}`;
+  let jobId;
+
+  try {
+    // Create a temporary job for this test.
+    const insertResult = await pool.query(
+      `INSERT INTO jobs (company_id, title)
+       VALUES ($1, $2)
+       RETURNING id`,
+      ["1", title]
+    );
+
+    jobId = insertResult.rows[0].id;
+
+    // Delete the job through the API.
+    const response = await fetch(
+      `${baseUrl}/api/v1/jobs/${jobId}`,
+      { method: "DELETE" }
+    );
+
+    assert.equal(response.status, 200);
+
+    const body = await response.json();
+
+    assert.equal(body.message, "Job deleted successfully");
+    assert.equal(body.job.id, jobId);
+    assert.equal(body.job.title, title);
+
+    // Verify that the job is actually removed from PostgreSQL.
+    const databaseResult = await pool.query(
+      "SELECT id FROM jobs WHERE id = $1",
+      [jobId]
+    );
+
+    assert.equal(databaseResult.rowCount, 0);
+  } finally {
+    // Safe cleanup if the test fails.
+    if (jobId) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});
+
+test("DELETE /api/v1/jobs/:id returns 404 for a missing job", async () => {
+  // Find an ID greater than every existing job ID.
+  const idResult = await pool.query(
+    "SELECT (COALESCE(MAX(id), 0) + 1000000)::text AS id FROM jobs"
+  );
+
+  const missingId = idResult.rows[0].id;
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs/${missingId}`,
+    { method: "DELETE" }
+  );
+
+  assert.equal(response.status, 404);
+
+  const body = await response.json();
+  assert.equal(body.error, "Job not found");
+});
+
+test("DELETE /api/v1/jobs/:id rejects an invalid job ID", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/jobs/invalid`,
+    { method: "DELETE" }
+  );
+
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+  assert.equal(body.error, "A valid job ID is required");
+});

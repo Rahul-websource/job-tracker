@@ -480,8 +480,51 @@ async function updateJob(req, res, next) {
   }
 }
 
+
+// DELETE /api/v1/jobs/:id
+// Delete an existing job.
+async function deleteJob(req, res, next) {
+  try {
+    const { id } = req.params;
+
+    // Validate the job ID.
+    if (
+      !/^\d+$/.test(id) ||
+      !Number.isSafeInteger(Number(id)) ||
+      Number(id) <= 0
+    ) {
+      return res.status(400).json({
+        error: "A valid job ID is required",
+      });
+    }
+
+    // Delete only the job matching this ID.
+    const result = await pool.query(
+      `DELETE FROM jobs
+       WHERE id = $1
+       RETURNING id, company_id, title`,
+      [id]
+    );
+
+    // Job not found.
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: "Job not found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Job deleted successfully",
+      job: result.rows[0],
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   createJob,
   getJobs,
   updateJob,
+  deleteJob,
 };

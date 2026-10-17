@@ -293,7 +293,167 @@ async function getApplications(req, res, next) {
   }
 }
 
+
+// PATCH /api/v1/applications/:id
+// Update application status and record its history atomically.
+async function updateApplicationStatus(req, res, next) {
+  const { id } = req.params;
+  const body = req.body;
+
+  // Validate application ID.
+  if (
+    !/^[1-9]\d*$/.test(id) ||
+    !Number.isSafeInteger(Number(id))
+  ) {
+    return res.status(400).json({
+      error: "A valid application ID is required",
+    });
+  }
+
+  // Validate request body.
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return res.status(400).json({
+      error: "A valid JSON object is required",
+    });
+  }
+
+  const { status, notes, follow_up_at } = body;
+
+  // Require a new status.
+  if (
+    typeof status !== "string" ||
+    !VALID_STATUSES.includes(status.trim().toLowerCase())
+  ) {
+    return res.status(400).json({
+      error: `Status must be one of: ${VALID_STATUSES.join(", ")}`,
+    });
+  }
+
+  // Validate optional notes.
+  if (notes !== undefined && notes !== null && typeof notes !== "string") {
+    return res.status(400).json({
+      error: "Notes must be a string or null",
+    });
+  }
+
+  // Validate optional follow-up date.
+  if (follow_up_at !== undefined && follow_up_at !== null) {
+    if (typeof follow_up_at !== "string" || !follow_up_at.trim()) {
+      return res.status(400).json({
+        error: "follow_up_at must be a valid date-time string or null",
+      });
+    }
+
+    const parsedDate = new Date(follow_up_at);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return res.status(400).json({
+        error: "follow_up_at must be a valid date-time string or null",
+      });
+    }
+  }
+
+  const normalizedStatus = status.trim().toLowerCase();
+  let client;
+
+  try {
+    client = await pool.connect();
+    await client.query("BEGIN");
+
+    // Lock the row to prevent concurrent status updates from overwriting
+    // each other's history.
+    const existingResult = await client.query(
+      `SELECT id, status
+       FROM applications
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+
+    if (existingResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(404).json({
+        error: "Application not found",
+      });
+    }
+
+    const existingApplication = existingResult.rows[0];
+    const oldStatus = existingApplication.status;
+
+    const updateResult = await client.query(
+      `UPDATE applications
+       SET status = $1,
+           notes = CASE WHEN $2::boolean THEN $3 ELSE notes END,
+           follow_up_at = CASE WHEN $4::boolean THEN $5::timestamptz ELSE follow_up_at END,
+           updated_at = NOW()
+       WHERE id = $6
+       RETURNING
+         id,
+         user_id,
+         job_id,
+         status,
+         applied_at,
+         follow_up_at,
+         notes,
+         created_at,
+         updated_at`,
+      [
+        normalizedStatus,
+        Object.hasOwn(body, "notes"),
+        notes === undefined ? null : notes?.trim() || null,
+        Object.hasOwn(body, "follow_up_at"),
+        follow_up_at ? new Date(follow_up_at).toISOString() : null,
+        id,
+      ]
+    );
+
+    const application = updateResult.rows[0];
+
+    // Record a history entry only when the status actually changes.
+    if (oldStatus !== normalizedStatus) {
+      await client.query(
+        `INSERT INTO status_history (
+           application_id,
+           old_status,
+           new_status,
+           notes
+         )
+         VALUES ($1, $2, $3, $4)`,
+        [
+          id,
+          oldStatus,
+          normalizedStatus,
+          "Application status updated",
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      message: "Application status updated successfully",
+      application,
+    });
+  } catch (error) {
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        // Preserve the original error if rollback itself fails.
+      }
+    }
+
+    return next(error);
+  } finally {
+    if (client) {
+      client.release();
+    }
+  }
+}
+
 module.exports = {
   createApplication,
   getApplications,
+  updateApplicationStatus,
 };

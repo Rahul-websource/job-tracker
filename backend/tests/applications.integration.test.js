@@ -340,3 +340,235 @@ test("GET /api/v1/applications rejects a limit greater than 100", async () => {
   assert.equal(response.status, 400);
   assert.match(body.error, /limit/i);
 });
+
+// PATCH /api/v1/applications/:id integration tests
+
+test("PATCH /api/v1/applications/:id updates status and records history", async () => {
+  const uniqueId = randomUUID();
+  let jobId;
+  let applicationId;
+
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title, location, employment_type)
+       VALUES (1, $1, $2, $3)
+       RETURNING id`,
+      [`Application PATCH Test ${uniqueId}`, "Bengaluru", "Full-time"]
+    );
+    jobId = jobResult.rows[0].id;
+
+    const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: 1,
+        job_id: jobId,
+        status: "applied",
+      }),
+    });
+
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json();
+    applicationId = created.application.id;
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "interview",
+          notes: "Technical interview scheduled",
+        }),
+      }
+    );
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.application.status, "interview");
+    assert.equal(body.application.notes, "Technical interview scheduled");
+
+    const historyResult = await pool.query(
+      `SELECT old_status, new_status
+       FROM status_history
+       WHERE application_id = $1
+       ORDER BY id`,
+      [applicationId]
+    );
+
+    assert.equal(historyResult.rows.length, 2);
+    assert.equal(historyResult.rows[0].old_status, null);
+    assert.equal(historyResult.rows[0].new_status, "applied");
+    assert.equal(historyResult.rows[1].old_status, "applied");
+    assert.equal(historyResult.rows[1].new_status, "interview");
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [
+        applicationId,
+      ]);
+    }
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});
+
+test("PATCH /api/v1/applications/:id does not add duplicate history when status is unchanged", async () => {
+  const uniqueId = randomUUID();
+  let jobId;
+  let applicationId;
+
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title, location, employment_type)
+       VALUES (1, $1, $2, $3)
+       RETURNING id`,
+      [`Application Same Status ${uniqueId}`, "Delhi", "Full-time"]
+    );
+    jobId = jobResult.rows[0].id;
+
+    const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: 1, job_id: jobId, status: "applied" }),
+    });
+
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json();
+    applicationId = created.application.id;
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "applied" }),
+      }
+    );
+
+    assert.equal(response.status, 200);
+
+    const historyResult = await pool.query(
+      "SELECT id FROM status_history WHERE application_id = $1",
+      [applicationId]
+    );
+
+    assert.equal(historyResult.rows.length, 1);
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [
+        applicationId,
+      ]);
+    }
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});
+
+test("PATCH /api/v1/applications/:id rejects an invalid application ID", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/applications/invalid`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "interview" }),
+    }
+  );
+
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /application id/i);
+});
+
+test("PATCH /api/v1/applications/:id returns 404 for a missing application", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/applications/999999999`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "interview" }),
+    }
+  );
+
+  const body = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.match(body.error, /not found/i);
+});
+
+test("PATCH /api/v1/applications/:id rejects an invalid status", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/v1/applications/1`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "unknown-status" }),
+    }
+  );
+
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.match(body.error, /status/i);
+});
+
+test("PATCH /api/v1/applications/:id updates follow-up date", async () => {
+  const uniqueId = randomUUID();
+  let jobId;
+  let applicationId;
+
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title, location, employment_type)
+       VALUES (1, $1, $2, $3)
+       RETURNING id`,
+      [`Application Follow-up ${uniqueId}`, "Pune", "Full-time"]
+    );
+    jobId = jobResult.rows[0].id;
+
+    const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: 1, job_id: jobId, status: "applied" }),
+    });
+
+    assert.equal(createResponse.status, 201);
+    const created = await createResponse.json();
+    applicationId = created.application.id;
+
+    const followUpDate = "2026-11-15T10:00:00.000Z";
+
+    const response = await fetch(
+      `${baseUrl}/api/v1/applications/${applicationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "assessment",
+          follow_up_at: followUpDate,
+        }),
+      }
+    );
+
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      new Date(body.application.follow_up_at).toISOString(),
+      followUpDate
+    );
+    assert.equal(body.application.status, "assessment");
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [
+        applicationId,
+      ]);
+    }
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
+});

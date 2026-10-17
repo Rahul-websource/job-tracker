@@ -2,6 +2,7 @@ const jobsRoutes = require("./routes/jobs.routes");
 const express = require("express");
 const healthRoutes = require("./routes/health.routes");
 const companiesRoutes = require("./routes/companies.routes");
+const applicationsRoutes = require("./routes/applications.routes");
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.get("/", (req, res) => {
 app.use("/health", healthRoutes);
 app.use("/api/v1/companies", companiesRoutes);
 app.use("/api/v1/jobs", jobsRoutes);
+app.use("/api/v1/applications", applicationsRoutes);
 // Handle unknown routes.
 app.use((req, res) => {
   res.status(404).json({

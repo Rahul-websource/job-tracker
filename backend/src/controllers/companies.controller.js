@@ -67,7 +67,7 @@ async function createCompany(req, res, next) {
 
     // Temporary development-only user.
     // Authentication ke baad ise authenticated user ID se replace karenge.
-    const userId = 1;
+    const userId = req.user.id;
 
     const query = `
       INSERT INTO companies (user_id, name, website, location, notes)
@@ -103,8 +103,7 @@ async function createCompany(req, res, next) {
 async function getCompanies(req, res, next) {
   try {
     // Temporary development-only user.
-    const userId = 1;
-
+    const userId = req.user.id;
     const query = `
       SELECT id, user_id, name, website, location, notes, created_at, updated_at
       FROM companies

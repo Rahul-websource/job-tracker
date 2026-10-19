@@ -1,5 +1,7 @@
 const express = require("express");
 
+const authenticateToken = require("../middleware/auth.middleware");
+
 const {
   createJob,
   getJobs,
@@ -8,6 +10,9 @@ const {
 } = require("../controllers/jobs.controller");
 
 const router = express.Router();
+
+// All job routes require authentication
+router.use(authenticateToken);
 
 // GET /api/v1/jobs — list jobs
 router.get("/", getJobs);

@@ -1,5 +1,5 @@
 const express = require("express");
-
+const authenticateToken = require("../middleware/auth.middleware");
 const {
   createCompany,
   getCompanies,
@@ -8,9 +8,7 @@ const {
 const router = express.Router();
 
 // GET /api/v1/companies — retrieve companies
-router.get("/", getCompanies);
-
-// POST /api/v1/companies — create a company
-router.post("/", createCompany);
+router.get("/", authenticateToken, getCompanies);
+router.post("/", authenticateToken, createCompany);
 
 module.exports = router;

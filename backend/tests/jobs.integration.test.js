@@ -2,10 +2,22 @@ require("dotenv").config();
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const jwt = require("jsonwebtoken");
 const { randomUUID } = require("node:crypto");
 
 const app = require("../src/app");
 const pool = require("../src/config/db");
+
+
+function authHeaders(userId = "1") {
+  const token = jwt.sign(
+    { sub: String(userId) },
+    process.env.JWT_SECRET,
+    { algorithm: "HS256", expiresIn: "5m" }
+  );
+
+  return { Authorization: `Bearer ${token}` };
+}
 
 let server;
 let baseUrl;
@@ -39,6 +51,7 @@ test("POST /api/v1/jobs rejects a missing title", async () => {
   const response = await fetch(`${baseUrl}/api/v1/jobs`, {
     method: "POST",
     headers: {
+      ...authHeaders(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -57,6 +70,7 @@ test("POST /api/v1/jobs rejects an invalid company_id", async () => {
   const response = await fetch(`${baseUrl}/api/v1/jobs`, {
     method: "POST",
     headers: {
+      ...authHeaders(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -76,6 +90,7 @@ test("POST /api/v1/jobs rejects an invalid job URL", async () => {
   const response = await fetch(`${baseUrl}/api/v1/jobs`, {
     method: "POST",
     headers: {
+      ...authHeaders(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -102,6 +117,7 @@ test("POST /api/v1/jobs creates a job in PostgreSQL", async () => {
     const response = await fetch(`${baseUrl}/api/v1/jobs`, {
       method: "POST",
       headers: {
+      ...authHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -153,7 +169,7 @@ test("POST /api/v1/jobs creates a job in PostgreSQL", async () => {
   }
 });
 test("GET /api/v1/jobs returns jobs with company details", async () => {
-  const response = await fetch(`${baseUrl}/api/v1/jobs`);
+  const response = await fetch(`${baseUrl}/api/v1/jobs`, { headers: authHeaders() });
 
   assert.equal(response.status, 200);
 
@@ -175,9 +191,7 @@ test("GET /api/v1/jobs returns jobs with company details", async () => {
 });
 
 test("GET /api/v1/jobs returns pagination metadata", async () => {
-  const response = await fetch(
-    `${baseUrl}/api/v1/jobs?page=1&limit=5`
-  );
+  const response = await fetch(`${baseUrl}/api/v1/jobs?page=1&limit=5`, { headers: authHeaders() });
 
   assert.equal(response.status, 200);
 
@@ -192,9 +206,7 @@ test("GET /api/v1/jobs returns pagination metadata", async () => {
 });
 
 test("GET /api/v1/jobs rejects an invalid page", async () => {
-  const response = await fetch(
-    `${baseUrl}/api/v1/jobs?page=0`
-  );
+  const response = await fetch(`${baseUrl}/api/v1/jobs?page=0`, { headers: authHeaders() });
 
   assert.equal(response.status, 400);
 
@@ -207,9 +219,7 @@ test("GET /api/v1/jobs rejects an invalid page", async () => {
 });
 
 test("GET /api/v1/jobs rejects a limit greater than 100", async () => {
-  const response = await fetch(
-    `${baseUrl}/api/v1/jobs?limit=101`
-  );
+  const response = await fetch(`${baseUrl}/api/v1/jobs?limit=101`, { headers: authHeaders() });
 
   assert.equal(response.status, 400);
 
@@ -236,9 +246,7 @@ test("GET /api/v1/jobs filters jobs by location", async () => {
       ["1", title, "Noida", "Internship"]
     );
 
-    const response = await fetch(
-      `${baseUrl}/api/v1/jobs?location=Noida&search=${encodeURIComponent(title)}`
-    );
+    const response = await fetch(`${baseUrl}/api/v1/jobs?location=Noida&search=${encodeURIComponent(title)}`, { headers: authHeaders() });
 
     assert.equal(response.status, 200);
 
@@ -293,6 +301,7 @@ test("PATCH /api/v1/jobs/:id updates an existing job", async () => {
       {
         method: "PATCH",
         headers: {
+      ...authHeaders(),
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -327,6 +336,7 @@ test("PATCH /api/v1/jobs/:id returns 404 for a missing job", async () => {
     {
       method: "PATCH",
       headers: {
+      ...authHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -348,6 +358,7 @@ test("PATCH /api/v1/jobs/:id rejects an empty request body", async () => {
     {
       method: "PATCH",
       headers: {
+      ...authHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({}),
@@ -370,6 +381,7 @@ test("PATCH /api/v1/jobs/:id rejects an invalid job ID", async () => {
     {
       method: "PATCH",
       headers: {
+      ...authHeaders(),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -405,7 +417,7 @@ test("DELETE /api/v1/jobs/:id deletes an existing job", async () => {
     // Delete the job through the API.
     const response = await fetch(
       `${baseUrl}/api/v1/jobs/${jobId}`,
-      { method: "DELETE" }
+      { method: "DELETE", headers: authHeaders() }
     );
 
     assert.equal(response.status, 200);
@@ -441,7 +453,7 @@ test("DELETE /api/v1/jobs/:id returns 404 for a missing job", async () => {
 
   const response = await fetch(
     `${baseUrl}/api/v1/jobs/${missingId}`,
-    { method: "DELETE" }
+    { method: "DELETE", headers: authHeaders() }
   );
 
   assert.equal(response.status, 404);
@@ -453,7 +465,7 @@ test("DELETE /api/v1/jobs/:id returns 404 for a missing job", async () => {
 test("DELETE /api/v1/jobs/:id rejects an invalid job ID", async () => {
   const response = await fetch(
     `${baseUrl}/api/v1/jobs/invalid`,
-    { method: "DELETE" }
+    { method: "DELETE", headers: authHeaders() }
   );
 
   assert.equal(response.status, 400);

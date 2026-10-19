@@ -20,19 +20,9 @@ async function createApplication(req, res, next) {
     });
   }
 
-  const { user_id, job_id, status = "applied", notes, follow_up_at } = body;
-
-  // Validate user ID.
-  if (
-    user_id === undefined ||
-    !/^\d+$/.test(String(user_id)) ||
-    !Number.isSafeInteger(Number(user_id)) ||
-    Number(user_id) <= 0
-  ) {
-    return res.status(400).json({
-      error: "A valid user_id is required",
-    });
-  }
+  // Always derive the owner from the authenticated token.
+  const user_id = req.user.id;
+  const { job_id, status = "applied", notes, follow_up_at } = body;
 
   // Validate job ID.
   if (
@@ -85,6 +75,25 @@ async function createApplication(req, res, next) {
 
   try {
     await client.query("BEGIN");
+
+    // A user can apply only to a job belonging to their own company.
+    const jobResult = await client.query(
+      `SELECT jobs.id
+       FROM jobs
+       INNER JOIN companies
+         ON companies.id = jobs.company_id
+       WHERE jobs.id = $1
+         AND companies.user_id = $2`,
+      [String(job_id), user_id]
+    );
+
+    if (jobResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(404).json({
+        error: "Job not found",
+      });
+    }
 
     const insertResult = await client.query(
       `INSERT INTO applications (
@@ -160,22 +169,13 @@ async function createApplication(req, res, next) {
 async function getApplications(req, res, next) {
   try {
     const {
-      user_id = "1",
       status,
       page = "1",
       limit = "10",
     } = req.query;
 
-    // Validate user ID.
-    if (
-      !/^\d+$/.test(user_id) ||
-      !Number.isSafeInteger(Number(user_id)) ||
-      Number(user_id) <= 0
-    ) {
-      return res.status(400).json({
-        error: "A valid user_id is required",
-      });
-    }
+    // The authenticated user's ID comes from the verified JWT.
+    // Never trust a user_id supplied through query parameters.
 
     // Validate pagination.
     if (
@@ -211,7 +211,7 @@ async function getApplications(req, res, next) {
       }
     }
 
-    const userId = String(user_id);
+    const userId = req.user.id;
     const pageNumber = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNumber - 1) * pageSize;
@@ -365,9 +365,9 @@ async function updateApplicationStatus(req, res, next) {
     const existingResult = await client.query(
       `SELECT id, status
        FROM applications
-       WHERE id = $1
+       WHERE id = $1 AND user_id = $2
        FOR UPDATE`,
-      [id]
+      [id, req.user.id]
     );
 
     if (existingResult.rows.length === 0) {
@@ -387,7 +387,7 @@ async function updateApplicationStatus(req, res, next) {
            notes = CASE WHEN $2::boolean THEN $3 ELSE notes END,
            follow_up_at = CASE WHEN $4::boolean THEN $5::timestamptz ELSE follow_up_at END,
            updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $6 AND user_id = $7
        RETURNING
          id,
          user_id,
@@ -405,6 +405,7 @@ async function updateApplicationStatus(req, res, next) {
         Object.hasOwn(body, "follow_up_at"),
         follow_up_at ? new Date(follow_up_at).toISOString() : null,
         id,
+        req.user.id,
       ]
     );
 
@@ -467,12 +468,12 @@ async function getApplicationHistory(req, res, next) {
   }
 
   try {
-    // Check whether the application exists.
+    // Verify that the application belongs to the authenticated user.
     const applicationResult = await pool.query(
       `SELECT id
        FROM applications
-       WHERE id = $1`,
-      [id]
+       WHERE id = $1 AND user_id = $2`,
+      [id, req.user.id]
     );
 
     if (applicationResult.rows.length === 0) {

@@ -1,11 +1,24 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const jwt = require("jsonwebtoken");
 const { randomUUID } = require("node:crypto");
 
 require("dotenv").config();
 
 const app = require("../src/app");
 const pool = require("../src/config/db");
+
+function authHeaders(userId = "1") {
+  const token = jwt.sign(
+    { sub: String(userId) },
+    process.env.JWT_SECRET,
+    { algorithm: "HS256", expiresIn: "5m" }
+  );
+
+  return { Authorization: `Bearer ${token}` };
+}
+
+
 
 test("GET /api/v1/companies returns companies from PostgreSQL", async () => {
   const server = app.listen(0);
@@ -14,7 +27,8 @@ test("GET /api/v1/companies returns companies from PostgreSQL", async () => {
     const address = server.address();
 
     const response = await fetch(
-      `http://127.0.0.1:${address.port}/api/v1/companies`
+      `http://127.0.0.1:${address.port}/api/v1/companies`,
+      { headers: authHeaders() }
     );
 
     const body = await response.json();
@@ -53,6 +67,7 @@ test("POST /api/v1/companies creates a company in PostgreSQL", async () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           name: companyName,
@@ -102,6 +117,7 @@ test("POST /api/v1/companies rejects a duplicate company", async () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+          ...authHeaders(),
       },
       body: JSON.stringify({
         name: companyName,
@@ -116,6 +132,7 @@ test("POST /api/v1/companies rejects a duplicate company", async () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+          ...authHeaders(),
       },
       body: JSON.stringify({
         name: companyName,

@@ -1,3 +1,4 @@
+const authRoutes = require("./routes/auth.routes");
 const jobsRoutes = require("./routes/jobs.routes");
 const express = require("express");
 const healthRoutes = require("./routes/health.routes");
@@ -17,6 +18,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/health", healthRoutes);
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/companies", companiesRoutes);
 app.use("/api/v1/jobs", jobsRoutes);
 app.use("/api/v1/applications", applicationsRoutes);

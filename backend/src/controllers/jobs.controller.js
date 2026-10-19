@@ -88,7 +88,19 @@ async function createJob(req, res, next) {
         });
       }
     }
+    // Verify that the company belongs to the authenticated user.
+    const companyResult = await pool.query(
+      `SELECT id
+       FROM companies
+       WHERE id = $1 AND user_id = $2`,
+      [company_id, req.user.id]
+    );
 
+    if (companyResult.rowCount === 0) {
+      return res.status(404).json({
+        error: "Company not found",
+      });
+    }
     const query = `
       INSERT INTO jobs (
         company_id,
@@ -202,8 +214,8 @@ async function getJobs(req, res, next) {
     }
 
     // Build parameterized filters.
-    const conditions = [];
-    const values = [];
+    const conditions = ["companies.user_id = $1"];
+    const values = [req.user.id];
 
     if (location?.trim()) {
       values.push(`%${location.trim()}%`);
@@ -228,6 +240,8 @@ async function getJobs(req, res, next) {
     const countQuery = `
       SELECT COUNT(*) AS total
       FROM jobs
+      INNER JOIN companies
+        ON jobs.company_id = companies.id
       ${whereClause}
     `;
 
@@ -278,138 +292,64 @@ async function getJobs(req, res, next) {
 }
 
 // PATCH /api/v1/jobs/:id
-// Update selected fields of an existing job.
+// Update selected fields of a job owned by the authenticated user.
 async function updateJob(req, res, next) {
   try {
     const { id } = req.params;
 
-    // 1. Validate job ID.
-    if (
-      !/^\d+$/.test(id) ||
-      !Number.isSafeInteger(Number(id)) ||
-      Number(id) <= 0
-    ) {
-      return res.status(400).json({
-        error: "A valid job ID is required",
-      });
+    if (!/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) {
+      return res.status(400).json({ error: "A valid job ID is required" });
     }
 
-    const {
-      title,
-      description,
-      location,
-      employment_type,
-      job_url,
-    } = req.body;
-
-    // 2. Require at least one update field.
-    const allowedFields = [
-      "title",
-      "description",
-      "location",
-      "employment_type",
-      "job_url",
-    ];
-
+    const allowedFields = ["title", "description", "location", "employment_type", "job_url"];
     const suppliedFields = Object.keys(req.body);
 
     if (suppliedFields.length === 0) {
-      return res.status(400).json({
-        error: "At least one field must be provided",
-      });
+      return res.status(400).json({ error: "At least one field must be provided" });
     }
 
-    // 3. Reject fields that cannot be updated through this endpoint.
-    const unsupportedFields = suppliedFields.filter(
-      (field) => !allowedFields.includes(field)
-    );
-
+    const unsupportedFields = suppliedFields.filter((field) => !allowedFields.includes(field));
     if (unsupportedFields.length > 0) {
-      return res.status(400).json({
-        error: `Unsupported field: ${unsupportedFields[0]}`,
-      });
+      return res.status(400).json({ error: `Unsupported field: ${unsupportedFields[0]}` });
     }
 
-    // 4. Validate title when supplied.
-    if (
-      Object.hasOwn(req.body, "title") &&
-      (typeof title !== "string" || !title.trim())
-    ) {
-      return res.status(400).json({
-        error: "Job title must be a non-empty string",
-      });
-    }
+    const { title, description, location, employment_type, job_url } = req.body;
 
+    if (Object.hasOwn(req.body, "title") &&
+        (typeof title !== "string" || !title.trim())) {
+      return res.status(400).json({ error: "Job title must be a non-empty string" });
+    }
     if (title !== undefined && title.trim().length > 200) {
-      return res.status(400).json({
-        error: "Job title must not exceed 200 characters",
-      });
+      return res.status(400).json({ error: "Job title must not exceed 200 characters" });
     }
 
-    // 5. Validate optional text fields.
-    if (
-      Object.hasOwn(req.body, "description") &&
-      description !== null &&
-      typeof description !== "string"
-    ) {
-      return res.status(400).json({
-        error: "Description must be a string or null",
-      });
+    if (Object.hasOwn(req.body, "description") && description !== null &&
+        typeof description !== "string") {
+      return res.status(400).json({ error: "Description must be a string or null" });
     }
 
-    if (
-      Object.hasOwn(req.body, "location") &&
-      location !== null &&
-      typeof location !== "string"
-    ) {
-      return res.status(400).json({
-        error: "Location must be a string or null",
-      });
+    if (Object.hasOwn(req.body, "location") && location !== null &&
+        typeof location !== "string") {
+      return res.status(400).json({ error: "Location must be a string or null" });
+    }
+    if (typeof location === "string" && location.trim().length > 200) {
+      return res.status(400).json({ error: "Location must not exceed 200 characters" });
     }
 
-    if (
-      typeof location === "string" &&
-      location.trim().length > 200
-    ) {
-      return res.status(400).json({
-        error: "Location must not exceed 200 characters",
-      });
+    if (Object.hasOwn(req.body, "employment_type") && employment_type !== null &&
+        typeof employment_type !== "string") {
+      return res.status(400).json({ error: "Employment type must be a string or null" });
+    }
+    if (typeof employment_type === "string" && employment_type.trim().length > 50) {
+      return res.status(400).json({ error: "Employment type must not exceed 50 characters" });
     }
 
-    if (
-      Object.hasOwn(req.body, "employment_type") &&
-      employment_type !== null &&
-      typeof employment_type !== "string"
-    ) {
-      return res.status(400).json({
-        error: "Employment type must be a string or null",
-      });
-    }
-
-    if (
-      typeof employment_type === "string" &&
-      employment_type.trim().length > 50
-    ) {
-      return res.status(400).json({
-        error: "Employment type must not exceed 50 characters",
-      });
-    }
-
-    // 6. Validate job URL when supplied.
-    if (
-      Object.hasOwn(req.body, "job_url") &&
-      job_url !== null &&
-      job_url !== ""
-    ) {
+    if (Object.hasOwn(req.body, "job_url") && job_url !== null && job_url !== "") {
       if (typeof job_url !== "string") {
-        return res.status(400).json({
-          error: "Job URL must be a string or null",
-        });
+        return res.status(400).json({ error: "Job URL must be a string or null" });
       }
-
       try {
         const parsedUrl = new URL(job_url);
-
         if (!["http:", "https:"].includes(parsedUrl.protocol)) {
           throw new Error("Unsupported URL protocol");
         }
@@ -420,55 +360,43 @@ async function updateJob(req, res, next) {
       }
     }
 
-    // 7. Build UPDATE dynamically using an allowlist.
     const values = [];
     const assignments = [];
 
     for (const field of allowedFields) {
       if (Object.hasOwn(req.body, field)) {
         let value = req.body[field];
-
         if (typeof value === "string") {
           value = value.trim();
-
-          if (value === "" && field !== "title") {
-            value = null;
-          }
+          if (value === "" && field !== "title") value = null;
         }
-
         values.push(value);
         assignments.push(`${field} = $${values.length}`);
       }
     }
 
-    // Always update the modification timestamp.
     assignments.push("updated_at = NOW()");
-
-    values.push(id);
+    values.push(id, req.user.id);
 
     const query = `
       UPDATE jobs
       SET ${assignments.join(", ")}
-      WHERE id = $${values.length}
+      WHERE id = $${values.length - 1}
+        AND EXISTS (
+          SELECT 1
+          FROM companies
+          WHERE companies.id = jobs.company_id
+            AND companies.user_id = $${values.length}
+        )
       RETURNING
-        id,
-        company_id,
-        title,
-        description,
-        location,
-        employment_type,
-        job_url,
-        created_at,
-        updated_at
+        id, company_id, title, description, location,
+        employment_type, job_url, created_at, updated_at
     `;
 
     const result = await pool.query(query, values);
 
-    // 8. If no row was updated, the job does not exist.
     if (result.rowCount === 0) {
-      return res.status(404).json({
-        error: "Job not found",
-      });
+      return res.status(404).json({ error: "Job not found" });
     }
 
     return res.status(200).json({
@@ -482,12 +410,11 @@ async function updateJob(req, res, next) {
 
 
 // DELETE /api/v1/jobs/:id
-// Delete an existing job.
+// Delete only a job belonging to the authenticated user.
 async function deleteJob(req, res, next) {
   try {
     const { id } = req.params;
 
-    // Validate the job ID.
     if (
       !/^\d+$/.test(id) ||
       !Number.isSafeInteger(Number(id)) ||
@@ -498,15 +425,19 @@ async function deleteJob(req, res, next) {
       });
     }
 
-    // Delete only the job matching this ID.
     const result = await pool.query(
       `DELETE FROM jobs
        WHERE id = $1
+         AND EXISTS (
+           SELECT 1
+           FROM companies
+           WHERE companies.id = jobs.company_id
+             AND companies.user_id = $2
+         )
        RETURNING id, company_id, title`,
-      [id]
+      [id, req.user.id]
     );
 
-    // Job not found.
     if (result.rowCount === 0) {
       return res.status(404).json({
         error: "Job not found",
@@ -521,6 +452,7 @@ async function deleteJob(req, res, next) {
     return next(error);
   }
 }
+
 
 module.exports = {
   createJob,

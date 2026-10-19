@@ -1,4 +1,5 @@
 const express = require("express");
+const authenticateToken = require("../middleware/auth.middleware");
 
 const {
   createApplication,
@@ -8,6 +9,9 @@ const {
 } = require("../controllers/applications.controller");
 
 const router = express.Router();
+
+// Require authentication for every applications endpoint.
+router.use(authenticateToken);
 
 // POST /api/v1/applications — create an application
 router.post("/", createApplication);

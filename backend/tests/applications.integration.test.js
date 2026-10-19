@@ -3,8 +3,22 @@ require("dotenv").config();
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { randomUUID } = require("node:crypto");
+const jwt = require("jsonwebtoken");
 const app = require("../src/app");
 const pool = require("../src/config/db");
+
+function authHeaders(userId = "1", includeJson = true) {
+  const token = jwt.sign(
+    { sub: String(userId) },
+    process.env.JWT_SECRET,
+    { algorithm: "HS256", expiresIn: "5m" }
+  );
+
+  return {
+    ...(includeJson ? { "Content-Type": "application/json" } : {}),
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 let server;
 let baseUrl;
@@ -44,7 +58,7 @@ test("POST /api/v1/applications creates an application and initial status histor
 
     const response = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         user_id: 1,
         job_id: jobId,
@@ -88,24 +102,49 @@ test("POST /api/v1/applications creates an application and initial status histor
   }
 });
 
-test("POST /api/v1/applications rejects an invalid user ID", async () => {
-  const response = await fetch(`${baseUrl}/api/v1/applications`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: 0,
-      job_id: 24,
-    }),
-  });
+test("POST /api/v1/applications ignores a client-supplied user ID", async () => {
+  const title = `Application User ID Test ${randomUUID()}`;
+  let jobId;
+  let applicationId;
 
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error, "A valid user_id is required");
+  try {
+    const jobResult = await pool.query(
+      `INSERT INTO jobs (company_id, title)
+       VALUES (1, $1)
+       RETURNING id`,
+      [title]
+    );
+    jobId = jobResult.rows[0].id;
+
+    const response = await fetch(`${baseUrl}/api/v1/applications`, {
+      method: "POST",
+      headers: authHeaders("1"),
+      body: JSON.stringify({
+        user_id: 0,
+        job_id: jobId,
+        status: "applied",
+      }),
+    });
+
+    assert.equal(response.status, 201);
+    const body = await response.json();
+    applicationId = body.application.id;
+
+    assert.equal(String(body.application.user_id), "1");
+  } finally {
+    if (applicationId !== undefined) {
+      await pool.query("DELETE FROM applications WHERE id = $1", [applicationId]);
+    }
+    if (jobId !== undefined) {
+      await pool.query("DELETE FROM jobs WHERE id = $1", [jobId]);
+    }
+  }
 });
 
 test("POST /api/v1/applications rejects an invalid status", async () => {
   const response = await fetch(`${baseUrl}/api/v1/applications`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify({
       user_id: 1,
       job_id: 24,
@@ -124,18 +163,15 @@ test("POST /api/v1/applications rejects a non-existent job", async () => {
 
   const response = await fetch(`${baseUrl}/api/v1/applications`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders(),
     body: JSON.stringify({
       user_id: 1,
       job_id: missingJobResult.rows[0].id,
     }),
   });
 
-  assert.equal(response.status, 400);
-  assert.equal(
-    (await response.json()).error,
-    "The specified user or job does not exist"
-  );
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error, "Job not found");
 });
 
 test("POST /api/v1/applications rejects a duplicate application", async () => {
@@ -161,7 +197,7 @@ test("POST /api/v1/applications rejects a duplicate application", async () => {
 
     const firstResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -172,7 +208,7 @@ test("POST /api/v1/applications rejects a duplicate application", async () => {
 
     const secondResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -213,7 +249,7 @@ test("GET /api/v1/applications returns applications with job and company details
 
     const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         user_id: 1,
         job_id: jobId,
@@ -227,7 +263,8 @@ test("GET /api/v1/applications returns applications with job and company details
     applicationId = createBody.application.id;
 
     const response = await fetch(
-      `${baseUrl}/api/v1/applications?user_id=1`
+      `${baseUrl}/api/v1/applications?user_id=1`,
+      { headers: authHeaders() }
     );
     const body = await response.json();
 
@@ -275,7 +312,7 @@ test("GET /api/v1/applications filters applications by status", async () => {
 
     const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         user_id: 1,
         job_id: jobId,
@@ -288,7 +325,8 @@ test("GET /api/v1/applications filters applications by status", async () => {
     applicationId = createBody.application.id;
 
     const response = await fetch(
-      `${baseUrl}/api/v1/applications?user_id=1&status=interview`
+      `${baseUrl}/api/v1/applications?user_id=1&status=interview`,
+      { headers: authHeaders() }
     );
     const body = await response.json();
 
@@ -313,7 +351,8 @@ test("GET /api/v1/applications filters applications by status", async () => {
 
 test("GET /api/v1/applications rejects an invalid status", async () => {
   const response = await fetch(
-    `${baseUrl}/api/v1/applications?status=unknown`
+    `${baseUrl}/api/v1/applications?status=unknown`,
+    { headers: authHeaders() }
   );
   const body = await response.json();
 
@@ -323,7 +362,8 @@ test("GET /api/v1/applications rejects an invalid status", async () => {
 
 test("GET /api/v1/applications rejects an invalid page", async () => {
   const response = await fetch(
-    `${baseUrl}/api/v1/applications?page=0`
+    `${baseUrl}/api/v1/applications?page=0`,
+    { headers: authHeaders() }
   );
   const body = await response.json();
 
@@ -333,7 +373,8 @@ test("GET /api/v1/applications rejects an invalid page", async () => {
 
 test("GET /api/v1/applications rejects a limit greater than 100", async () => {
   const response = await fetch(
-    `${baseUrl}/api/v1/applications?limit=101`
+    `${baseUrl}/api/v1/applications?limit=101`,
+    { headers: authHeaders() }
   );
   const body = await response.json();
 
@@ -359,7 +400,7 @@ test("PATCH /api/v1/applications/:id updates status and records history", async 
 
     const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({
         user_id: 1,
         job_id: jobId,
@@ -375,7 +416,7 @@ test("PATCH /api/v1/applications/:id updates status and records history", async 
       `${baseUrl}/api/v1/applications/${applicationId}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           status: "interview",
           notes: "Technical interview scheduled",
@@ -430,7 +471,7 @@ test("PATCH /api/v1/applications/:id does not add duplicate history when status 
 
     const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ user_id: 1, job_id: jobId, status: "applied" }),
     });
 
@@ -442,7 +483,7 @@ test("PATCH /api/v1/applications/:id does not add duplicate history when status 
       `${baseUrl}/api/v1/applications/${applicationId}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ status: "applied" }),
       }
     );
@@ -472,7 +513,7 @@ test("PATCH /api/v1/applications/:id rejects an invalid application ID", async (
     `${baseUrl}/api/v1/applications/invalid`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ status: "interview" }),
     }
   );
@@ -488,7 +529,7 @@ test("PATCH /api/v1/applications/:id returns 404 for a missing application", asy
     `${baseUrl}/api/v1/applications/999999999`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ status: "interview" }),
     }
   );
@@ -504,7 +545,7 @@ test("PATCH /api/v1/applications/:id rejects an invalid status", async () => {
     `${baseUrl}/api/v1/applications/1`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ status: "unknown-status" }),
     }
   );
@@ -531,7 +572,7 @@ test("PATCH /api/v1/applications/:id updates follow-up date", async () => {
 
     const createResponse = await fetch(`${baseUrl}/api/v1/applications`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders(),
       body: JSON.stringify({ user_id: 1, job_id: jobId, status: "applied" }),
     });
 
@@ -545,7 +586,7 @@ test("PATCH /api/v1/applications/:id updates follow-up date", async () => {
       `${baseUrl}/api/v1/applications/${applicationId}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           status: "assessment",
           follow_up_at: followUpDate,
@@ -593,7 +634,7 @@ test("GET application history returns status changes in chronological order", as
       `${baseUrl}/api/v1/applications`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({
           user_id: 1,
           job_id: jobId,
@@ -609,7 +650,7 @@ test("GET application history returns status changes in chronological order", as
       `${baseUrl}/api/v1/applications/${applicationId}`,
       {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ status: "interview" }),
       }
     );
@@ -617,7 +658,8 @@ test("GET application history returns status changes in chronological order", as
     assert.equal(updateResponse.status, 200);
 
     const response = await fetch(
-      `${baseUrl}/api/v1/applications/${applicationId}/history`
+      `${baseUrl}/api/v1/applications/${applicationId}/history`,
+      { headers: authHeaders() }
     );
 
     const body = await response.json();
@@ -649,7 +691,8 @@ test("GET application history returns status changes in chronological order", as
 
 test("GET application history rejects an invalid application ID", async () => {
   const response = await fetch(
-    `${baseUrl}/api/v1/applications/invalid/history`
+    `${baseUrl}/api/v1/applications/invalid/history`,
+    { headers: authHeaders() }
   );
 
   const body = await response.json();
@@ -660,7 +703,8 @@ test("GET application history rejects an invalid application ID", async () => {
 
 test("GET application history returns 404 for a missing application", async () => {
   const response = await fetch(
-    `${baseUrl}/api/v1/applications/999999999/history`
+    `${baseUrl}/api/v1/applications/999999999/history`,
+    { headers: authHeaders() }
   );
 
   const body = await response.json();
@@ -694,7 +738,8 @@ test("GET application history returns an empty array when history is empty", asy
     applicationId = applicationResult.rows[0].id;
 
     const response = await fetch(
-      `${baseUrl}/api/v1/applications/${applicationId}/history`
+      `${baseUrl}/api/v1/applications/${applicationId}/history`,
+      { headers: authHeaders() }
     );
 
     const body = await response.json();

@@ -1,6 +1,21 @@
+require("dotenv").config();
+
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const jwt = require("jsonwebtoken");
 const app = require("../src/app");
+
+function authHeaders(userId = "1") {
+  const token = jwt.sign(
+    { sub: String(userId) },
+    process.env.JWT_SECRET,
+    { algorithm: "HS256", expiresIn: "5m" }
+  );
+
+  return { Authorization: `Bearer ${token}` };
+}
+
+
 
 test("GET / returns the Job Tracker welcome message", async () => {
   const server = app.listen(0);
@@ -122,6 +137,7 @@ test("POST /api/v1/companies rejects a missing company name", async () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           website: "https://example.com",
@@ -160,6 +176,7 @@ test("POST /api/v1/companies rejects an empty company name", async () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           name: "   ",
@@ -198,6 +215,7 @@ test("POST /api/v1/companies rejects an invalid website URL", async () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           name: "Example Company",
@@ -237,6 +255,7 @@ test("POST /api/v1/companies rejects a website using an unsupported protocol", a
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...authHeaders(),
         },
         body: JSON.stringify({
           name: "Example Company",

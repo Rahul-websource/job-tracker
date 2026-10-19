@@ -164,3 +164,59 @@ test("POST /api/v1/companies rejects a duplicate company", async () => {
     }
   }
 });
+
+test("GET /api/v1/companies only returns companies owned by the authenticated user", async () => {
+  const server = app.listen(0);
+
+  try {
+    const address = server.address();
+    const url = `http://127.0.0.1:${address.port}/api/v1/companies`;
+
+    const user1Response = await fetch(url, {
+      headers: authHeaders("1"),
+    });
+
+    const user41Response = await fetch(url, {
+      headers: authHeaders("41"),
+    });
+
+    const user1Body = await user1Response.json();
+    const user41Body = await user41Response.json();
+
+    assert.equal(user1Response.status, 200);
+    assert.equal(user41Response.status, 200);
+
+    assert.ok(Array.isArray(user1Body.companies));
+    assert.ok(Array.isArray(user41Body.companies));
+
+    for (const company of user1Body.companies) {
+      assert.equal(company.user_id, "1");
+    }
+
+    for (const company of user41Body.companies) {
+      assert.equal(company.user_id, "41");
+    }
+
+    assert.ok(
+      user41Body.companies.some(
+        (company) => company.name === "JWT Isolation Test Company"
+      ),
+      "User 41 should see their own test company"
+    );
+
+    assert.ok(
+      !user41Body.companies.some(
+        (company) => company.name === "Google" ||
+          company.name === "Microsoft"
+      ),
+      "User 41 must not see User 1's existing companies"
+    );
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+});

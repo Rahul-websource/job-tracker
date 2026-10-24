@@ -85,3 +85,30 @@ export async function createApplication(token, applicationData) {
     body: JSON.stringify(applicationData),
   });
 }
+export async function updateApplication(token, applicationId, updates) {
+  return apiRequest(`/applications/${applicationId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function getApplicationHistory(token, applicationId) {
+  return apiRequest(`/applications/${applicationId}/history`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+}
+
+export async function updateJob(token, jobId, updates) {
+  return apiRequest(`/jobs/${jobId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updates),
+  })
+}

@@ -3,20 +3,13 @@ import Auth from './Auth'
 import {
   getApplications,
   getCompanies,
-  getJobs,
   createCompany,
   createJob,
   createApplication,
+  updateApplication,
+  getApplicationHistory,
 } from './services/api'
 import './App.css'
-
-const initialApplications = [
-  { id: 1, company: 'Google', role: 'Software Engineer', location: 'Bengaluru', date: 'Oct 18, 2026', status: 'Interview' },
-  { id: 2, company: 'Microsoft', role: 'Frontend Developer', location: 'Hyderabad', date: 'Oct 17, 2026', status: 'Applied' },
-  { id: 3, company: 'Amazon', role: 'SDE I', location: 'Bengaluru', date: 'Oct 15, 2026', status: 'In Review' },
-  { id: 4, company: 'Adobe', role: 'Software Engineer Intern', location: 'Noida', date: 'Oct 12, 2026', status: 'Offer' },
-  { id: 5, company: 'Flipkart', role: 'Full Stack Developer', location: 'Bengaluru', date: 'Oct 10, 2026', status: 'Rejected' },
-]
 
 const navigation = [
   { label: 'Dashboard', icon: '▦' },
@@ -26,15 +19,45 @@ const navigation = [
 ]
 
 function App() {
-  const [session, setSession] = useState(null)
+  const [session, setSession] = useState(() => {
+  try {
+    const savedSession = sessionStorage.getItem('job-tracker-session')
 
-  function handleLogin(authData) {
-    setSession(authData)
+    if (!savedSession) {
+      return null
+    }
+
+    const parsedSession = JSON.parse(savedSession)
+
+    if (
+      typeof parsedSession?.token !== 'string' ||
+      !parsedSession.token ||
+      !parsedSession.user ||
+      typeof parsedSession.user !== 'object'
+    ) {
+      sessionStorage.removeItem('job-tracker-session')
+      return null
+    }
+
+    return parsedSession
+  } catch {
+    sessionStorage.removeItem('job-tracker-session')
+    return null
   }
+})
+  function handleLogin(authData) {
+  sessionStorage.setItem(
+    'job-tracker-session',
+    JSON.stringify(authData)
+  )
+
+  setSession(authData)
+}
 
   function handleLogout() {
-    setSession(null)
-  }
+  sessionStorage.removeItem('job-tracker-session')
+  setSession(null)
+}
 
   const [activePage, setActivePage] = useState('Dashboard')
   const [search, setSearch] = useState('')
@@ -45,7 +68,11 @@ function App() {
   const [savingApplication, setSavingApplication] = useState(false)
   const [formError, setFormError] = useState('')
   const [showForm, setShowForm] = useState(false)
-  const [newApplication, setNewApplication] = useState({
+  const [historyApplication, setHistoryApplication] = useState(null)
+const [applicationHistory, setApplicationHistory] = useState([])
+const [loadingHistory, setLoadingHistory] = useState(false)
+const [historyError, setHistoryError] = useState('')
+const [newApplication, setNewApplication] = useState({
     company: '',
     role: '',
     location: '',
@@ -132,7 +159,76 @@ function App() {
     { label: 'Offers received', value: applications.filter((a) => a.status === 'Offer').length, icon: '✦', note: 'Great progress', color: 'green' },
     { label: 'In review', value: applications.filter((a) => a.status === 'In Review').length, icon: '◉', note: 'Waiting for updates', color: 'orange' },
   ]
+  async function openApplicationHistory(application) {
+  setHistoryApplication(application)
+  setApplicationHistory([])
+  setHistoryError('')
+  setLoadingHistory(true)
 
+  try {
+    const result = await getApplicationHistory(
+      session.token,
+      application.id
+    )
+
+    setApplicationHistory(
+      Array.isArray(result.history) ? result.history : []
+    )
+  } catch (error) {
+    setHistoryError(
+      error.message || 'Unable to load application history.'
+    )
+  } finally {
+    setLoadingHistory(false)
+  }
+}
+async function updateStatus(applicationId, newStatus) {
+    const statusMap = {
+      Applied: 'applied',
+      'In Review': 'assessment',
+      Assessment: 'assessment',
+      Interview: 'interview',
+      Offer: 'offer',
+      Rejected: 'rejected',
+      Withdrawn: 'withdrawn',
+    }
+
+    const application = applications.find(
+      (item) => item.id === applicationId
+    )
+
+    if (!application) return
+
+    const previousStatus = application.status
+
+    // Update the UI immediately.
+    setApplications((current) =>
+      current.map((item) =>
+        item.id === applicationId
+          ? { ...item, status: newStatus }
+          : item
+      )
+    )
+
+    try {
+      await updateApplication(session.token, applicationId, {
+        status: statusMap[newStatus],
+      })
+    } catch (error) {
+      // Restore the previous status if the API request fails.
+      setApplications((current) =>
+        current.map((item) =>
+          item.id === applicationId
+            ? { ...item, status: previousStatus }
+            : item
+        )
+      )
+
+      setApplicationsError(
+        error.message || 'Unable to update application status.'
+      )
+    }
+  }
   async function addApplication(event) {
     event.preventDefault()
 
@@ -384,21 +480,22 @@ function App() {
                 <thead>
                   <tr>
                     <th>COMPANY & ROLE</th>
-                    <th>LOCATION</th>
-                    <th>DATE ADDED</th>
-                    <th>STATUS</th>
+<th>LOCATION</th>
+<th>DATE ADDED</th>
+<th>STATUS</th>
+<th>HISTORY</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingApplications ? (
                     <tr>
-                      <td colSpan="4" className="empty-state">
+                      <td colSpan="5" className="empty-state">
                         Loading your applications...
                       </td>
                     </tr>
                   ) : applicationsError ? (
                     <tr>
-                      <td colSpan="4" className="empty-state" role="alert">
+                      <td colSpan="5" className="empty-state" role="alert">
                         Unable to load applications: {applicationsError}
                       </td>
                     </tr>
@@ -419,12 +516,39 @@ function App() {
                       </td>
                       <td className="location-cell"><span>⌖</span> {application.location}</td>
                       <td className="date-cell">{application.date}</td>
-                      <td><span className={`status-badge status-${application.status.toLowerCase().replace(' ', '-')}`}>{application.status}</span></td>
+
+                      <td>
+                        <select
+                          className={`status-badge status-${application.status.toLowerCase().replace(' ', '-')}`}
+                          value={application.status}
+                          onChange={(event) =>
+                            updateStatus(application.id, event.target.value)
+                          }
+                          aria-label={`Update status for ${application.company} - ${application.role}`}
+                        >
+                          <option value="Applied">Applied</option>
+                          <option value="In Review">In Review</option>
+                          <option value="Assessment">Assessment</option>
+                          <option value="Interview">Interview</option>
+                          <option value="Offer">Offer</option>
+                          <option value="Rejected">Rejected</option>
+                          <option value="Withdrawn">Withdrawn</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => openApplicationHistory(application)}
+                        >
+                          History
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {filteredApplications.length === 0 && (
                     <tr>
-                      <td colSpan="4" className="empty-state">
+                      <td colSpan="5" className="empty-state">
                         {applications.length === 0
                           ? 'You have no applications yet.'
                           : 'No applications match your search or status filter.'}
@@ -493,6 +617,86 @@ function App() {
                 <button type="submit" className="primary-button" disabled={savingApplication}>{savingApplication ? "Saving..." : "Add application"}</button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {historyApplication && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setHistoryApplication(null)}
+        >
+          <section
+            className="application-modal history-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">APPLICATION ACTIVITY</span>
+                <h2 id="history-modal-title">Status history</h2>
+                <p>
+                  {historyApplication.company} · {historyApplication.role}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => setHistoryApplication(null)}
+                aria-label="Close history"
+              >
+                ×
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <p>Loading status history...</p>
+            ) : historyError ? (
+              <p className="form-error" role="alert">{historyError}</p>
+            ) : applicationHistory.length === 0 ? (
+              <p className="empty-state">
+                No status changes recorded yet. Your future status changes will appear here.
+              </p>
+            ) : (
+              <div className="history-list">
+                {applicationHistory.map((entry) => (
+                  <article className="history-entry" key={entry.id}>
+                    <p>
+                      <strong>
+                        {String(entry.old_status || 'Unknown')
+                          .replace(/^./, (letter) => letter.toUpperCase())}
+                      </strong>
+                      {' → '}
+                      <strong>
+                        {String(entry.new_status || 'Unknown')
+                          .replace(/^./, (letter) => letter.toUpperCase())}
+                      </strong>
+                    </p>
+                    <time>
+                      {entry.changed_at
+                        ? new Date(entry.changed_at).toLocaleString('en-IN', {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })
+                        : 'Date unavailable'}
+                    </time>
+                    {entry.notes && <p>{entry.notes}</p>}
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setHistoryApplication(null)}
+              >
+                Close
+              </button>
+            </div>
           </section>
         </div>
       )}

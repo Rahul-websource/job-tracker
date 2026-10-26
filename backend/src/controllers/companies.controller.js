@@ -1,73 +1,62 @@
 const pool = require("../config/db");
 
+function validateCompanyFields({ name, website, location, notes }, requireName = true) {
+  if (requireName && (typeof name !== "string" || !name.trim())) {
+    return "Company name is required";
+  }
+
+  if (name !== undefined) {
+    if (typeof name !== "string" || !name.trim()) {
+      return "Company name must be a non-empty string";
+    }
+
+    if (name.trim().length > 200) {
+      return "Company name must not exceed 200 characters";
+    }
+  }
+
+  if (website !== undefined && website !== null && website !== "") {
+    if (typeof website !== "string") {
+      return "Website must be a string";
+    }
+
+    try {
+      const parsedUrl = new URL(website);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("Invalid protocol");
+      }
+    } catch {
+      return "Website must be a valid HTTP or HTTPS URL";
+    }
+  }
+
+  if (location !== undefined && location !== null) {
+    if (typeof location !== "string") {
+      return "Location must be a string";
+    }
+
+    if (location.trim().length > 200) {
+      return "Location must not exceed 200 characters";
+    }
+  }
+
+  if (notes !== undefined && notes !== null && typeof notes !== "string") {
+    return "Notes must be a string";
+  }
+
+  return null;
+}
+
 async function createCompany(req, res, next) {
   try {
     const { name, website, location, notes } = req.body;
 
-    // 1. Company name is required.
-    if (typeof name !== "string" || !name.trim()) {
-      return res.status(400).json({
-        error: "Company name is required",
-      });
+    const validationError = validateCompanyFields(req.body);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
     }
-
-    const normalizedName = name.trim();
-
-    // 2. Validate company name length.
-    if (normalizedName.length > 200) {
-      return res.status(400).json({
-        error: "Company name must not exceed 200 characters",
-      });
-    }
-
-    // 3. Website is optional, but must be a valid URL if provided.
-    if (website !== undefined && website !== null && website !== "") {
-      if (typeof website !== "string") {
-        return res.status(400).json({
-          error: "Website must be a string",
-        });
-      }
-
-      try {
-        const parsedUrl = new URL(website);
-
-        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-          throw new Error("Invalid protocol");
-        }
-      } catch {
-        return res.status(400).json({
-          error: "Website must be a valid HTTP or HTTPS URL",
-        });
-      }
-    }
-
-    // 4. Validate location.
-    if (location !== undefined && location !== null) {
-      if (typeof location !== "string") {
-        return res.status(400).json({
-          error: "Location must be a string",
-        });
-      }
-
-      if (location.trim().length > 200) {
-        return res.status(400).json({
-          error: "Location must not exceed 200 characters",
-        });
-      }
-    }
-
-    // 5. Validate notes.
-    if (notes !== undefined && notes !== null) {
-      if (typeof notes !== "string") {
-        return res.status(400).json({
-          error: "Notes must be a string",
-        });
-      }
-    }
-
-    // Temporary development-only user.
-    // Authentication ke baad ise authenticated user ID se replace karenge.
-    const userId = req.user.id;
 
     const query = `
       INSERT INTO companies (user_id, name, website, location, notes)
@@ -76,9 +65,9 @@ async function createCompany(req, res, next) {
     `;
 
     const values = [
-      userId,
-      normalizedName,
-      website ? website.trim() : null,
+      req.user.id,
+      name.trim(),
+      website?.trim() || null,
       location?.trim() || null,
       notes?.trim() || null,
     ];
@@ -96,30 +85,199 @@ async function createCompany(req, res, next) {
       });
     }
 
-    next(error);
+    return next(error);
   }
 }
 
 async function getCompanies(req, res, next) {
   try {
-    // Temporary development-only user.
-    const userId = req.user.id;
-    const query = `
-      SELECT id, user_id, name, website, location, notes, created_at, updated_at
-      FROM companies
-      WHERE user_id = $1
-      ORDER BY created_at DESC, id DESC
-    `;
-
-    const result = await pool.query(query, [userId]);
+    const result = await pool.query(
+      `
+        SELECT
+          companies.id,
+          companies.user_id,
+          companies.name,
+          companies.website,
+          companies.location,
+          companies.notes,
+          companies.created_at,
+          companies.updated_at,
+          COUNT(jobs.id)::int AS job_count
+        FROM companies
+        LEFT JOIN jobs ON jobs.company_id = companies.id
+        WHERE companies.user_id = $1
+        GROUP BY companies.id
+        ORDER BY companies.created_at DESC, companies.id DESC
+      `,
+      [req.user.id]
+    );
 
     return res.status(200).json({
       count: result.rows.length,
       companies: result.rows,
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
-module.exports = { createCompany, getCompanies };
+async function getCompanyById(req, res, next) {
+  try {
+    const companyResult = await pool.query(
+      `
+        SELECT id, user_id, name, website, location, notes, created_at, updated_at
+        FROM companies
+        WHERE id = $1 AND user_id = $2
+      `,
+      [req.params.id, req.user.id]
+    );
+
+    if (companyResult.rows.length === 0) {
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    const jobsResult = await pool.query(
+      `
+        SELECT
+          jobs.id,
+          jobs.company_id,
+          jobs.title,
+          jobs.description,
+          jobs.location,
+          jobs.employment_type,
+          jobs.job_url,
+          jobs.created_at,
+          jobs.updated_at
+        FROM jobs
+        WHERE jobs.company_id = $1
+        ORDER BY jobs.created_at DESC, jobs.id DESC
+      `,
+      [companyResult.rows[0].id]
+    );
+
+    return res.status(200).json({
+      company: companyResult.rows[0],
+      jobs: jobsResult.rows,
+      jobCount: jobsResult.rows.length,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+async function updateCompany(req, res, next) {
+  try {
+    const { name, website, location, notes } = req.body;
+
+    if (!req.body || Object.keys(req.body).length === 0) {
+      return res.status(400).json({ error: "Request body must not be empty" });
+    }
+
+    const validationError = validateCompanyFields(req.body, false);
+
+    if (validationError) {
+      return res.status(400).json({ error: validationError });
+    }
+
+    const allowedFields = {
+      name: name === undefined ? undefined : name.trim(),
+      website: website === undefined ? undefined : website?.trim() || null,
+      location: location === undefined ? undefined : location?.trim() || null,
+      notes: notes === undefined ? undefined : notes?.trim() || null,
+    };
+
+    const fields = Object.entries(allowedFields).filter(
+      ([, value]) => value !== undefined
+    );
+
+    if (fields.length === 0) {
+      return res.status(400).json({
+        error: "Provide at least one field to update",
+      });
+    }
+
+    const setClause = fields
+      .map(([field], index) => `${field} = $${index + 1}`)
+      .concat("updated_at = CURRENT_TIMESTAMP")
+      .join(", ");
+
+    const values = fields.map(([, value]) => value);
+    values.push(req.params.id, req.user.id);
+
+    const result = await pool.query(
+      `
+        UPDATE companies
+        SET ${setClause}
+        WHERE id = $${values.length - 1}
+          AND user_id = $${values.length}
+        RETURNING id, user_id, name, website, location, notes, created_at, updated_at
+      `,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    return res.status(200).json({
+      message: "Company updated successfully",
+      company: result.rows[0],
+    });
+  } catch (error) {
+    if (error.code === "23505") {
+      return res.status(409).json({
+        error: "This company already exists for this user",
+      });
+    }
+
+    return next(error);
+  }
+}
+
+async function deleteCompany(req, res, next) {
+  try {
+    const companyResult = await pool.query(
+      "SELECT id FROM companies WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.user.id]
+    );
+
+    if (companyResult.rows.length === 0) {
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    const jobsResult = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM jobs WHERE company_id = $1",
+      [companyResult.rows[0].id]
+    );
+
+    if (jobsResult.rows[0].count > 0) {
+      return res.status(409).json({
+        error: "This company has linked jobs. Delete or reassign its jobs before deleting the company.",
+        linkedJobs: jobsResult.rows[0].count,
+      });
+    }
+
+    const result = await pool.query(
+      "DELETE FROM companies WHERE id = $1 AND user_id = $2 RETURNING id",
+      [req.params.id, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Company not found" });
+    }
+
+    return res.status(200).json({
+      message: "Company deleted successfully",
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+module.exports = {
+  createCompany,
+  getCompanies,
+  getCompanyById,
+  updateCompany,
+  deleteCompany,
+};

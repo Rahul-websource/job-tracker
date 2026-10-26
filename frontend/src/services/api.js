@@ -40,12 +40,36 @@ export async function getCompanies(token) {
   });
 }
 
-export async function getJobs(token) {
-  return apiRequest('/jobs', {
+export async function getJobs(token, filters = {}) {
+  const params = new URLSearchParams()
+
+  if (filters.search) {
+    params.set('search', filters.search)
+  }
+
+  if (filters.location) {
+    params.set('location', filters.location)
+  }
+
+  if (filters.employment_type) {
+    params.set('employment_type', filters.employment_type)
+  }
+
+  if (filters.page) {
+    params.set('page', String(filters.page))
+  }
+
+  if (filters.limit) {
+    params.set('limit', String(filters.limit))
+  }
+
+  const query = params.toString()
+
+  return apiRequest(`/jobs${query ? `?${query}` : ''}`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
-  });
+  })
 }
 
 export async function getApplications(token) {
@@ -110,5 +134,13 @@ export async function updateJob(token, jobId, updates) {
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(updates),
+  })
+}
+export async function deleteJob(token, jobId) {
+  return apiRequest(`/jobs/${jobId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
   })
 }

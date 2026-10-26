@@ -9,6 +9,7 @@ import {
   updateApplication,
   getApplicationHistory,
 } from './services/api'
+import ManagementPages from './ManagementPages'
 import './App.css'
 
 const navigation = [
@@ -391,6 +392,9 @@ async function updateStatus(applicationId, newStatus) {
           </div>
         </header>
 
+        {(activePage === 'Jobs' || activePage === 'Companies') ? (
+          <ManagementPages page={activePage} token={session.token} />
+        ) : (
         <section className="page-content">
           <div className="welcome-row">
             <div>
@@ -572,6 +576,8 @@ async function updateStatus(applicationId, newStatus) {
             <span>Built for your career journey</span>
           </footer>
         </section>
+        )}
+
       </main>
 
       {showForm && (

@@ -27,7 +27,7 @@ CREATE TABLE companies (
 -- 3. Jobs
 CREATE TABLE jobs (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    company_id BIGINT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    company_id BIGINT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
     title VARCHAR(200) NOT NULL,
     description TEXT,
     location VARCHAR(200),

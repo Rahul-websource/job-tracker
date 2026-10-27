@@ -3,104 +3,119 @@ const pool = require("../config/db");
 // POST /api/v1/jobs
 // Create a new job.
 async function createJob(req, res, next) {
+  const {
+    company_id,
+    title,
+    description,
+    location,
+    employment_type,
+    job_url,
+  } = req.body;
+
+  // Validate company_id.
+  if (
+    company_id === undefined ||
+    company_id === null ||
+    !/^\d+$/.test(String(company_id)) ||
+    !Number.isSafeInteger(Number(company_id)) ||
+    Number(company_id) <= 0
+  ) {
+    return res.status(400).json({
+      error: "A valid company_id is required",
+    });
+  }
+
+  // Validate job title.
+  if (typeof title !== "string" || !title.trim()) {
+    return res.status(400).json({
+      error: "Job title is required",
+    });
+  }
+
+  if (title.trim().length > 200) {
+    return res.status(400).json({
+      error: "Job title must not exceed 200 characters",
+    });
+  }
+
+  // Validate optional text fields.
+  if (description != null && typeof description !== "string") {
+    return res.status(400).json({
+      error: "Description must be a string",
+    });
+  }
+
+  if (location != null && typeof location !== "string") {
+    return res.status(400).json({
+      error: "Location must be a string",
+    });
+  }
+
+  if (location && location.trim().length > 200) {
+    return res.status(400).json({
+      error: "Location must not exceed 200 characters",
+    });
+  }
+
+  if (
+    employment_type != null &&
+    (typeof employment_type !== "string" ||
+      employment_type.trim().length > 50)
+  ) {
+    return res.status(400).json({
+      error: "Employment type must be a string of at most 50 characters",
+    });
+  }
+
+  // Validate job URL.
+  if (job_url != null && job_url !== "") {
+    if (typeof job_url !== "string") {
+      return res.status(400).json({
+        error: "Job URL must be a string",
+      });
+    }
+
+    try {
+      const parsedUrl = new URL(job_url);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("Unsupported URL protocol");
+      }
+    } catch {
+      return res.status(400).json({
+        error: "Job URL must be a valid HTTP or HTTPS URL",
+      });
+    }
+  }
+
+  let client;
+  let transactionStarted = false;
+
   try {
-    const {
-      company_id,
-      title,
-      description,
-      location,
-      employment_type,
-      job_url,
-    } = req.body;
+    client = await pool.connect();
 
-    // Validate company_id.
-    if (
-      company_id === undefined ||
-      company_id === null ||
-      !/^\d+$/.test(String(company_id)) ||
-      !Number.isSafeInteger(Number(company_id)) ||
-      Number(company_id) <= 0
-    ) {
-      return res.status(400).json({
-        error: "A valid company_id is required",
-      });
-    }
+    await client.query("BEGIN");
+    transactionStarted = true;
 
-    // Validate job title.
-    if (typeof title !== "string" || !title.trim()) {
-      return res.status(400).json({
-        error: "Job title is required",
-      });
-    }
-
-    if (title.trim().length > 200) {
-      return res.status(400).json({
-        error: "Job title must not exceed 200 characters",
-      });
-    }
-
-    // Validate optional text fields.
-    if (description != null && typeof description !== "string") {
-      return res.status(400).json({
-        error: "Description must be a string",
-      });
-    }
-
-    if (location != null && typeof location !== "string") {
-      return res.status(400).json({
-        error: "Location must be a string",
-      });
-    }
-
-    if (location && location.trim().length > 200) {
-      return res.status(400).json({
-        error: "Location must not exceed 200 characters",
-      });
-    }
-
-    if (
-      employment_type != null &&
-      (typeof employment_type !== "string" ||
-        employment_type.trim().length > 50)
-    ) {
-      return res.status(400).json({
-        error: "Employment type must be a string of at most 50 characters",
-      });
-    }
-
-    // Validate job URL.
-    if (job_url != null && job_url !== "") {
-      if (typeof job_url !== "string") {
-        return res.status(400).json({
-          error: "Job URL must be a string",
-        });
-      }
-
-      try {
-        const parsedUrl = new URL(job_url);
-
-        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-          throw new Error("Unsupported URL protocol");
-        }
-      } catch {
-        return res.status(400).json({
-          error: "Job URL must be a valid HTTP or HTTPS URL",
-        });
-      }
-    }
-    // Verify that the company belongs to the authenticated user.
-    const companyResult = await pool.query(
+    // Lock the company row so a concurrent company deletion
+    // cannot race with this job creation.
+    const companyResult = await client.query(
       `SELECT id
        FROM companies
-       WHERE id = $1 AND user_id = $2`,
+       WHERE id = $1 AND user_id = $2
+       FOR UPDATE`,
       [company_id, req.user.id]
     );
 
     if (companyResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+
       return res.status(404).json({
         error: "Company not found",
       });
     }
+
     const query = `
       INSERT INTO jobs (
         company_id,
@@ -132,13 +147,24 @@ async function createJob(req, res, next) {
       job_url?.trim() || null,
     ];
 
-    const result = await pool.query(query, values);
+    const result = await client.query(query, values);
+
+    await client.query("COMMIT");
+    transactionStarted = false;
 
     return res.status(201).json({
       message: "Job created successfully",
       job: result.rows[0],
     });
   } catch (error) {
+    if (client && transactionStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error("Failed to roll back job creation transaction:", rollbackError.message);
+      }
+    }
+
     if (error.code === "23503") {
       return res.status(400).json({
         error: "The specified company does not exist",
@@ -146,6 +172,10 @@ async function createJob(req, res, next) {
     }
 
     return next(error);
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 }
 

@@ -235,42 +235,110 @@ async function updateCompany(req, res, next) {
 }
 
 async function deleteCompany(req, res, next) {
+  const { id } = req.params;
+
+  if (
+    !/^\d+$/.test(id) ||
+    !Number.isSafeInteger(Number(id)) ||
+    Number(id) <= 0
+  ) {
+    return res.status(400).json({
+      error: "A valid company ID is required",
+    });
+  }
+
+  let client;
+  let transactionStarted = false;
+
   try {
-    const companyResult = await pool.query(
-      "SELECT id FROM companies WHERE id = $1 AND user_id = $2",
-      [req.params.id, req.user.id]
+    client = await pool.connect();
+
+    await client.query("BEGIN");
+    transactionStarted = true;
+
+    // Lock the company row to coordinate with concurrent job creation.
+    const companyResult = await client.query(
+      `SELECT id
+       FROM companies
+       WHERE id = $1 AND user_id = $2
+       FOR UPDATE`,
+      [id, req.user.id]
     );
 
-    if (companyResult.rows.length === 0) {
-      return res.status(404).json({ error: "Company not found" });
-    }
+    if (companyResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
 
-    const jobsResult = await pool.query(
-      "SELECT COUNT(*)::int AS count FROM jobs WHERE company_id = $1",
-      [companyResult.rows[0].id]
-    );
-
-    if (jobsResult.rows[0].count > 0) {
-      return res.status(409).json({
-        error: "This company has linked jobs. Delete or reassign its jobs before deleting the company.",
-        linkedJobs: jobsResult.rows[0].count,
+      return res.status(404).json({
+        error: "Company not found",
       });
     }
 
-    const result = await pool.query(
-      "DELETE FROM companies WHERE id = $1 AND user_id = $2 RETURNING id",
-      [req.params.id, req.user.id]
+    const companyId = companyResult.rows[0].id;
+
+    const jobsResult = await client.query(
+      "SELECT COUNT(*)::int AS count FROM jobs WHERE company_id = $1",
+      [companyId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Company not found" });
+    const linkedJobs = jobsResult.rows[0].count;
+
+    if (linkedJobs > 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+
+      return res.status(409).json({
+        error: "This company has linked jobs. Delete or reassign its jobs before deleting the company.",
+        linkedJobs,
+      });
     }
+
+    const result = await client.query(
+      `DELETE FROM companies
+       WHERE id = $1 AND user_id = $2
+       RETURNING id`,
+      [companyId, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+
+      return res.status(404).json({
+        error: "Company not found",
+      });
+    }
+
+    await client.query("COMMIT");
+    transactionStarted = false;
 
     return res.status(200).json({
       message: "Company deleted successfully",
     });
   } catch (error) {
+    if (client && transactionStarted) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackError) {
+        console.error(
+          "Failed to roll back company deletion transaction:",
+          rollbackError.message
+        );
+      }
+    }
+
+    // Database-level protection against deleting a company with linked jobs.
+    if (error.code === "23503" || error.code === "23514") {
+      return res.status(409).json({
+        error: "This company cannot be deleted while dependent records exist.",
+      });
+    }
+
     return next(error);
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 }
 

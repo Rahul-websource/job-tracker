@@ -82,6 +82,17 @@ async function createJob(baseUrl, companyId, title, userId = "1") {
 }
 
 async function deleteCompanyDirectly(companyId, userId = "1") {
+  // Remove jobs belonging to this test-owned company first.
+  // Dependent applications/history are handled by their existing FK rules.
+  await pool.query(
+    `DELETE FROM jobs
+     WHERE company_id = $1
+       AND company_id IN (
+         SELECT id FROM companies WHERE id = $1 AND user_id = $2
+       )`,
+    [companyId, userId]
+  );
+
   await pool.query(
     "DELETE FROM companies WHERE id = $1 AND user_id = $2",
     [companyId, userId]

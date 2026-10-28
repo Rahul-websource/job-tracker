@@ -144,3 +144,22 @@ export async function deleteJob(token, jobId) {
     },
   })
 }
+
+export async function updateCompany(token, companyId, updates) {
+  return apiRequest(`/companies/${companyId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteCompany(token, companyId) {
+  return apiRequest(`/companies/${companyId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+}

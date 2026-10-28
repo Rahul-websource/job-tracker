@@ -3,6 +3,8 @@ import {
   getJobs,
   getCompanies,
   createCompany,
+  updateCompany,
+  deleteCompany,
   createJob,
   updateJob,
   deleteJob,
@@ -41,6 +43,7 @@ export default function ManagementPages({ page, token }) {
   const [jobForm, setJobForm] = useState(emptyJob)
 
   const [companyModal, setCompanyModal] = useState(false)
+  const [editingCompany, setEditingCompany] = useState(null)
   const [companyForm, setCompanyForm] = useState(emptyCompany)
 
   const loadData = useCallback(async () => {
@@ -160,26 +163,79 @@ export default function ManagementPages({ page, token }) {
     }
   }
 
+  function openNewCompany() {
+    setEditingCompany(null)
+    setCompanyForm({ ...emptyCompany })
+    setError('')
+    setNotice('')
+    setCompanyModal(true)
+  }
+
+  function openEditCompany(company) {
+    setEditingCompany(company)
+    setCompanyForm({
+      name: company.name || '',
+      website: company.website || '',
+      location: company.location || '',
+      notes: company.notes || '',
+    })
+    setError('')
+    setNotice('')
+    setCompanyModal(true)
+  }
+
+  async function removeCompany(company) {
+    const confirmed = window.confirm(
+      `Delete "${company.name}"? This action cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setError('')
+    setNotice('')
+    setSaving(true)
+
+    try {
+      await deleteCompany(token, company.id)
+      setNotice(`"${company.name}" deleted successfully.`)
+      await loadData()
+    } catch (err) {
+      setError(
+        err.message ||
+        'Unable to delete the company. It may have linked jobs.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function saveCompany(event) {
     event.preventDefault()
     setSaving(true)
     setError('')
     setNotice('')
 
-    try {
-      await createCompany(token, {
-        name: companyForm.name.trim(),
-        website: companyForm.website.trim() || undefined,
-        location: companyForm.location.trim() || undefined,
-        notes: companyForm.notes.trim() || undefined,
-      })
+    const payload = {
+      name: companyForm.name.trim(),
+      website: companyForm.website.trim() || undefined,
+      location: companyForm.location.trim() || undefined,
+      notes: companyForm.notes.trim() || undefined,
+    }
 
-      setCompanyForm(emptyCompany)
+    try {
+      if (editingCompany) {
+        await updateCompany(token, editingCompany.id, payload)
+        setNotice(`"${payload.name}" updated successfully.`)
+      } else {
+        await createCompany(token, payload)
+        setNotice('Company added successfully.')
+      }
+
+      setCompanyForm({ ...emptyCompany })
+      setEditingCompany(null)
       setCompanyModal(false)
-      setNotice('Company added successfully.')
       await loadData()
     } catch (err) {
-      setError(err.message || 'Unable to add the company.')
+      setError(err.message || 'Unable to save the company.')
     } finally {
       setSaving(false)
     }
@@ -207,8 +263,7 @@ export default function ManagementPages({ page, token }) {
             if (page === 'Jobs') {
               openNewJob()
             } else {
-              setCompanyForm(emptyCompany)
-              setCompanyModal(true)
+              openNewCompany()
             }
           }}
         >
@@ -346,6 +401,7 @@ export default function ManagementPages({ page, token }) {
                     <th>LOCATION</th>
                     <th>WEBSITE</th>
                     <th>NOTES</th>
+                    <th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -361,6 +417,26 @@ export default function ManagementPages({ page, token }) {
                         ) : '—'}
                       </td>
                       <td>{company.notes || '—'}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => openEditCompany(company)}
+                            disabled={saving}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => removeCompany(company)}
+                            disabled={saving}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -476,7 +552,15 @@ export default function ManagementPages({ page, token }) {
       )}
 
       {companyModal && (
-        <div className="modal-backdrop" onClick={() => setCompanyModal(false)}>
+        <div
+          className="modal-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setCompanyModal(false)
+              setEditingCompany(null)
+            }
+          }}
+        >
           <section
             className="application-modal"
             role="dialog"
@@ -487,12 +571,17 @@ export default function ManagementPages({ page, token }) {
             <div className="modal-heading">
               <div>
                 <span className="eyebrow">COMPANY MANAGEMENT</span>
-                <h2 id="company-modal-title">Add company</h2>
+                <h2 id="company-modal-title">
+                  {editingCompany ? 'Edit company' : 'Add company'}
+                </h2>
               </div>
               <button
                 type="button"
                 className="close-button"
-                onClick={() => setCompanyModal(false)}
+                onClick={() => {
+                  setCompanyModal(false)
+                  setEditingCompany(null)
+                }}
                 aria-label="Close"
               >×</button>
             </div>
@@ -534,11 +623,22 @@ export default function ManagementPages({ page, token }) {
               </label>
 
               <div className="modal-actions">
-                <button type="button" className="secondary-button" onClick={() => setCompanyModal(false)}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setCompanyModal(false)
+                    setEditingCompany(null)
+                  }}
+                >
                   Cancel
                 </button>
                 <button type="submit" className="primary-button" disabled={saving}>
-                  {saving ? 'Saving...' : 'Add company'}
+                  {saving
+                    ? 'Saving...'
+                    : editingCompany
+                      ? 'Save changes'
+                      : 'Add company'}
                 </button>
               </div>
             </form>

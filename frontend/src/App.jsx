@@ -154,12 +154,63 @@ const [newApplication, setNewApplication] = useState({
     return matchesSearch && matchesStatus
   })
 
+  const totalApplications = applications.length
+
+  const interviewCount = applications.filter(
+    (a) => a.status === 'Interview'
+  ).length
+
+  const offerCount = applications.filter(
+    (a) => a.status === 'Offer'
+  ).length
+
+  const assessmentCount = applications.filter(
+    (a) => a.status === 'Assessment'
+  ).length
+
+  const successRate =
+    totalApplications > 0
+      ? Math.round((offerCount / totalApplications) * 100)
+      : 0
+
   const stats = [
-    { label: 'Total applications', value: applications.length, icon: '▤', note: 'All tracked applications', color: 'blue' },
-    { label: 'Interviews', value: applications.filter((a) => a.status === 'Interview').length, icon: '◷', note: 'Keep preparing', color: 'purple' },
-    { label: 'Offers received', value: applications.filter((a) => a.status === 'Offer').length, icon: '✦', note: 'Great progress', color: 'green' },
-    { label: 'In review', value: applications.filter((a) => a.status === 'In Review').length, icon: '◉', note: 'Waiting for updates', color: 'orange' },
+    {
+      label: 'Total applications',
+      value: totalApplications,
+      icon: '▤',
+      note: 'All tracked applications',
+      color: 'blue',
+    },
+    {
+      label: 'Interviews',
+      value: interviewCount,
+      icon: '◷',
+      note: 'Keep preparing',
+      color: 'purple',
+    },
+    {
+      label: 'Offers received',
+      value: offerCount,
+      icon: '✦',
+      note: 'Great progress',
+      color: 'green',
+    },
+    {
+      label: 'Assessments',
+      value: assessmentCount,
+      icon: '◉',
+      note: 'Assessments in progress',
+      color: 'orange',
+    },
+    {
+      label: 'Success rate',
+      value: `${successRate}%`,
+      icon: '%',
+      note: 'Offers / total applications',
+      color: 'green',
+    },
   ]
+
   async function openApplicationHistory(application) {
   setHistoryApplication(application)
   setApplicationHistory([])

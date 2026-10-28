@@ -136,7 +136,7 @@ h1 { font-family: Manrope, sans-serif; font-size: 27px; line-height: 1.3; letter
 .live-label { display: flex; align-items: center; gap: 7px; color: #9aa1b1; font-size: 10px; }
 .live-label span { width: 6px; height: 6px; border-radius: 50%; background: #55be8a; }
 
-.stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+.stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 15px; }
 .stat-card { padding: 17px 17px 15px; border: 1px solid #e9ebf2; border-radius: 11px; background: #fff; box-shadow: 0 3px 10px #27345c04; }
 .stat-top { display: flex; align-items: center; justify-content: space-between; gap: 7px; color: #858da1; font-size: 10px; }
 .stat-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; font-size: 16px; }

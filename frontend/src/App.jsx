@@ -19,7 +19,49 @@ const navigation = [
   { label: 'Companies', icon: '▥' },
 ]
 
+function classifyFollowUpReminders(applications, now = Date.now()) {
+  const currentTime = now
+  const currentDate = new Date(currentTime)
+  const startOfToday = new Date(currentDate)
+  startOfToday.setHours(0, 0, 0, 0)
+
+  const startOfTomorrow = new Date(startOfToday)
+  startOfTomorrow.setDate(startOfTomorrow.getDate() + 1)
+
+  return applications
+    .filter((application) => {
+      if (!application.followUpAt) return false
+
+      const followUpDate = new Date(application.followUpAt)
+      return !Number.isNaN(followUpDate.getTime())
+    })
+    .map((application) => {
+      const followUpDate = new Date(application.followUpAt)
+
+      let reminderCategory
+
+      if (followUpDate.getTime() < currentTime) {
+        reminderCategory = 'overdue'
+      } else if (followUpDate < startOfTomorrow) {
+        reminderCategory = 'today'
+      } else {
+        reminderCategory = 'upcoming'
+      }
+
+      return {
+        ...application,
+        followUpDate,
+        reminderCategory,
+      }
+    })
+    .sort((a, b) => a.followUpDate - b.followUpDate)
+}
+
 function App() {
+  const [followUpEditor, setFollowUpEditor] = useState(null)
+  const [followUpInput, setFollowUpInput] = useState('')
+  const [savingFollowUp, setSavingFollowUp] = useState(false)
+  const [followUpError, setFollowUpError] = useState('')
   const [session, setSession] = useState(() => {
   try {
     const savedSession = sessionStorage.getItem('job-tracker-session')
@@ -103,6 +145,7 @@ const [newApplication, setNewApplication] = useState({
           company: item.company_name || 'Unknown company',
           role: item.job_title || 'Untitled role',
           location: item.job_location || 'Not specified',
+          followUpAt: item.follow_up_at || null,
           date: item.applied_at
             ? new Date(item.applied_at).toLocaleDateString('en-IN', {
                 month: 'short',
@@ -153,6 +196,18 @@ const [newApplication, setNewApplication] = useState({
 
     return matchesSearch && matchesStatus
   })
+
+  // Follow-up reminders are grouped using the current local date and time.
+  const followUpReminders = classifyFollowUpReminders(applications)
+  const overdueReminders = followUpReminders.filter(
+    (item) => item.reminderCategory === 'overdue'
+  )
+  const todayReminders = followUpReminders.filter(
+    (item) => item.reminderCategory === 'today'
+  )
+  const upcomingReminders = followUpReminders.filter(
+    (item) => item.reminderCategory === 'upcoming'
+  )
 
   const totalApplications = applications.length
 
@@ -252,6 +307,107 @@ const [newApplication, setNewApplication] = useState({
     setLoadingHistory(false)
   }
 }
+function openFollowUpEditor(application) {
+  setFollowUpEditor(application)
+  setFollowUpError('')
+
+  if (application.followUpAt) {
+    const date = new Date(application.followUpAt)
+    const localDate = new Date(
+      date.getTime() - date.getTimezoneOffset() * 60000
+    )
+    setFollowUpInput(localDate.toISOString().slice(0, 16))
+  } else {
+    setFollowUpInput('')
+  }
+}
+
+async function saveFollowUp(event) {
+  event.preventDefault()
+
+  if (!followUpEditor || !followUpInput) {
+    setFollowUpError('Please select a follow-up date and time.')
+    return
+  }
+
+  const parsedDate = new Date(followUpInput)
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    setFollowUpError('Please enter a valid date and time.')
+    return
+  }
+
+  setSavingFollowUp(true)
+  setFollowUpError('')
+
+  try {
+    await updateApplication(session.token, followUpEditor.id, {
+      status: ({
+        Applied: 'applied',
+        'In Review': 'assessment',
+        Assessment: 'assessment',
+        Interview: 'interview',
+        Offer: 'offer',
+        Rejected: 'rejected',
+        Withdrawn: 'withdrawn',
+      })[followUpEditor.status] || 'applied',
+      follow_up_at: parsedDate.toISOString(),
+    })
+
+    setApplications((current) =>
+      current.map((application) =>
+        application.id === followUpEditor.id
+          ? { ...application, followUpAt: parsedDate.toISOString() }
+          : application
+      )
+    )
+
+    setFollowUpEditor(null)
+    setFollowUpInput('')
+  } catch (error) {
+    setFollowUpError(error.message || 'Unable to save follow-up date.')
+  } finally {
+    setSavingFollowUp(false)
+  }
+}
+
+async function clearFollowUp() {
+  if (!followUpEditor) return
+
+  setSavingFollowUp(true)
+  setFollowUpError('')
+
+  try {
+    await updateApplication(session.token, followUpEditor.id, {
+      status: ({
+        Applied: 'applied',
+        'In Review': 'assessment',
+        Assessment: 'assessment',
+        Interview: 'interview',
+        Offer: 'offer',
+        Rejected: 'rejected',
+        Withdrawn: 'withdrawn',
+      })[followUpEditor.status] || 'applied',
+      follow_up_at: null,
+    })
+
+    setApplications((current) =>
+      current.map((application) =>
+        application.id === followUpEditor.id
+          ? { ...application, followUpAt: null }
+          : application
+      )
+    )
+
+    setFollowUpEditor(null)
+    setFollowUpInput('')
+  } catch (error) {
+    setFollowUpError(error.message || 'Unable to clear follow-up date.')
+  } finally {
+    setSavingFollowUp(false)
+  }
+}
+
 async function updateStatus(applicationId, newStatus) {
     const statusMap = {
       Applied: 'applied',
@@ -360,6 +516,7 @@ async function updateStatus(applicationId, newStatus) {
         company: item.company_name || 'Unknown company',
         role: item.job_title || 'Untitled role',
         location: item.job_location || 'Not specified',
+        followUpAt: item.follow_up_at || null,
         date: item.applied_at
           ? new Date(item.applied_at).toLocaleDateString('en-IN', {
               month: 'short',
@@ -514,6 +671,100 @@ async function updateStatus(applicationId, newStatus) {
           </div>
 
           {activePage === 'Dashboard' && (
+            <section className="follow-up-panel">
+              <div className="follow-up-heading">
+                <div>
+                  <h2>Follow-up Reminders</h2>
+                  <p>Stay on top of your next career opportunities</p>
+                </div>
+                <span className="follow-up-total">
+                  {followUpReminders.length} scheduled
+                </span>
+              </div>
+
+              {followUpReminders.length === 0 ? (
+                <div className="follow-up-empty">
+                  <span className="follow-up-empty-icon">◷</span>
+                  <div>
+                    <strong>No follow-ups scheduled</strong>
+                    <p>
+                      Applications with a follow-up date will appear here.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="follow-up-groups">
+                  {[
+                    {
+                      key: 'overdue',
+                      title: 'Overdue',
+                      description: 'Needs your attention',
+                      items: overdueReminders,
+                    },
+                    {
+                      key: 'today',
+                      title: 'Due Today',
+                      description: 'Scheduled for today',
+                      items: todayReminders,
+                    },
+                    {
+                      key: 'upcoming',
+                      title: 'Upcoming',
+                      description: 'Scheduled for a future date',
+                      items: upcomingReminders,
+                    },
+                  ].map((group) => (
+                    <section
+                      className={`follow-up-group ${group.key}`}
+                      key={group.key}
+                    >
+                      <div className="follow-up-group-heading">
+                        <div>
+                          <h3>{group.title}</h3>
+                          <p>{group.description}</p>
+                        </div>
+                        <span>{group.items.length}</span>
+                      </div>
+
+                      {group.items.length === 0 ? (
+                        <p className="follow-up-group-empty">
+                          No {group.title.toLowerCase()} follow-ups.
+                        </p>
+                      ) : (
+                        <div className="follow-up-list">
+                          {group.items.map((item) => (
+                            <article
+                              className="follow-up-item"
+                              key={item.id}
+                            >
+                              <div className="follow-up-item-main">
+                                <strong>{item.company}</strong>
+                                <span>{item.role}</span>
+                                <span className="follow-up-status">
+                                  {item.status}
+                                </span>
+                              </div>
+                              <time dateTime={item.followUpAt}>
+                                {item.followUpDate.toLocaleString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </time>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {activePage === 'Dashboard' && (
             <section className="status-distribution-panel">
               <div className="status-distribution-heading">
                 <div>
@@ -601,19 +852,20 @@ async function updateStatus(applicationId, newStatus) {
 <th>LOCATION</th>
 <th>DATE ADDED</th>
 <th>STATUS</th>
+<th>FOLLOW-UP</th>
 <th>HISTORY</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingApplications ? (
                     <tr>
-                      <td colSpan="5" className="empty-state">
+                      <td colSpan="6" className="empty-state">
                         Loading your applications...
                       </td>
                     </tr>
                   ) : applicationsError ? (
                     <tr>
-                      <td colSpan="5" className="empty-state" role="alert">
+                      <td colSpan="6" className="empty-state" role="alert">
                         Unable to load applications: {applicationsError}
                       </td>
                     </tr>
@@ -657,6 +909,15 @@ async function updateStatus(applicationId, newStatus) {
                         <button
                           type="button"
                           className="text-button"
+                          onClick={() => openFollowUpEditor(application)}
+                        >
+                          {application.followUpAt ? 'Edit follow-up' : 'Set follow-up'}
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="text-button"
                           onClick={() => openApplicationHistory(application)}
                         >
                           History
@@ -666,7 +927,7 @@ async function updateStatus(applicationId, newStatus) {
                   ))}
                   {filteredApplications.length === 0 && (
                     <tr>
-                      <td colSpan="5" className="empty-state">
+                      <td colSpan="6" className="empty-state">
                         {applications.length === 0
                           ? 'You have no applications yet.'
                           : 'No applications match your search or status filter.'}
@@ -735,6 +996,112 @@ async function updateStatus(applicationId, newStatus) {
               <div className="modal-actions">
                 <button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancel</button>
                 <button type="submit" className="primary-button" disabled={savingApplication}>{savingApplication ? "Saving..." : "Add application"}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {followUpEditor && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!savingFollowUp) {
+              setFollowUpEditor(null)
+              setFollowUpError('')
+            }
+          }}
+        >
+          <section
+            className="application-modal follow-up-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="follow-up-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">APPLICATION REMINDER</span>
+                <h2 id="follow-up-modal-title">
+                  {followUpEditor.followUpAt
+                    ? 'Edit follow-up'
+                    : 'Schedule follow-up'}
+                </h2>
+                <p>
+                  {followUpEditor.company} · {followUpEditor.role}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="close-button"
+                onClick={() => {
+                  if (!savingFollowUp) {
+                    setFollowUpEditor(null)
+                    setFollowUpError('')
+                  }
+                }}
+                aria-label="Close follow-up editor"
+                disabled={savingFollowUp}
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={saveFollowUp}>
+              <label htmlFor="follow-up-datetime">
+                Follow-up date and time *
+                <input
+                  id="follow-up-datetime"
+                  type="datetime-local"
+                  required
+                  value={followUpInput}
+                  onChange={(event) => setFollowUpInput(event.target.value)}
+                  disabled={savingFollowUp}
+                />
+              </label>
+
+              <p className="follow-up-form-help">
+                Choose when you want to follow up with this company.
+              </p>
+
+              {followUpError && (
+                <p className="form-error" role="alert">
+                  {followUpError}
+                </p>
+              )}
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => {
+                    setFollowUpEditor(null)
+                    setFollowUpError('')
+                  }}
+                  disabled={savingFollowUp}
+                >
+                  Cancel
+                </button>
+
+                {followUpEditor.followUpAt && (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={clearFollowUp}
+                    disabled={savingFollowUp}
+                  >
+                    Clear
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={savingFollowUp}
+                >
+                  {savingFollowUp ? 'Saving...' : 'Save follow-up'}
+                </button>
               </div>
             </form>
           </section>

@@ -173,6 +173,24 @@ const [newApplication, setNewApplication] = useState({
       ? Math.round((offerCount / totalApplications) * 100)
       : 0
 
+  const statusDistribution = [
+    { label: 'Applied', status: 'Applied', color: 'applied' },
+    { label: 'Assessment', status: 'Assessment', color: 'assessment' },
+    { label: 'Interview', status: 'Interview', color: 'interview' },
+    { label: 'Offer', status: 'Offer', color: 'offer' },
+    { label: 'Rejected', status: 'Rejected', color: 'rejected' },
+    { label: 'Withdrawn', status: 'Withdrawn', color: 'withdrawn' },
+  ].map((item) => ({
+    ...item,
+    count: applications.filter((application) => application.status === item.status).length,
+    percentage: totalApplications > 0
+      ? Math.round(
+          (applications.filter((application) => application.status === item.status).length /
+            totalApplications) * 100
+        )
+      : 0,
+  }))
+
   const stats = [
     {
       label: 'Total applications',
@@ -494,6 +512,51 @@ async function updateStatus(applicationId, newStatus) {
               </article>
             ))}
           </div>
+
+          {activePage === 'Dashboard' && (
+            <section className="status-distribution-panel">
+              <div className="status-distribution-heading">
+                <div>
+                  <h2>Application Status Distribution</h2>
+                  <p>Understand where your applications stand</p>
+                </div>
+                <span>{totalApplications} total</span>
+              </div>
+
+              {totalApplications === 0 ? (
+                <div className="status-distribution-empty">
+                  No applications yet. Add your first application to see your job-search breakdown.
+                </div>
+              ) : (
+                <div className="status-distribution-list">
+                  {statusDistribution.map((item) => (
+                    <div className="distribution-row" key={item.status}>
+                      <div className="distribution-label">
+                        <span>{item.label}</span>
+                        <strong>{item.count}</strong>
+                      </div>
+                      <div
+                        className="distribution-track"
+                        role="progressbar"
+                        aria-label={`${item.label} applications`}
+                        aria-valuemin={0}
+                        aria-valuemax={totalApplications}
+                        aria-valuenow={item.count}
+                      >
+                        <div
+                          className={`distribution-fill ${item.color}`}
+                          style={{ width: `${item.percentage}%` }}
+                        />
+                      </div>
+                      <span className="distribution-percentage">
+                        {item.percentage}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="applications-panel">
             <div className="panel-heading">

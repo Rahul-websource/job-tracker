@@ -245,3 +245,142 @@ tbody tr:hover { background: #fcfcff; }
   .table-footer, .page-footer { flex-wrap: wrap; }
   .page-footer { line-height: 1.7; }
 }
+
+/* Dashboard application status distribution */
+.status-distribution-panel {
+  margin-top: 24px;
+  padding: 22px;
+  background: #fff;
+  border: 1px solid #e9ebf2;
+  border-radius: 12px;
+  box-shadow: 0 3px 12px #27345c04;
+}
+
+.status-distribution-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.status-distribution-heading h2 {
+  margin: 0 0 6px;
+  color: #30364b;
+  font-size: 14px;
+}
+
+.status-distribution-heading p {
+  margin: 0;
+  color: #9aa1b1;
+  font-size: 11px;
+}
+
+.status-distribution-heading > span {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: #edf1ff;
+  color: #5368d0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.status-distribution-list {
+  display: grid;
+  gap: 19px;
+}
+
+.distribution-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 14px;
+}
+
+.distribution-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: #777f93;
+  font-size: 11px;
+}
+
+.distribution-label strong {
+  color: #30364b;
+  font-size: 11px;
+}
+
+.distribution-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #f0f2f7;
+}
+
+.distribution-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  transition: width 250ms ease;
+}
+
+.distribution-fill.applied {
+  background: #6075d6;
+}
+
+.distribution-fill.assessment {
+  background: #db9554;
+}
+
+.distribution-fill.interview {
+  background: #9669d9;
+}
+
+.distribution-fill.offer {
+  background: #35a777;
+}
+
+.distribution-fill.rejected {
+  background: #df6c79;
+}
+
+.distribution-fill.withdrawn {
+  background: #9aa1b1;
+}
+
+.distribution-percentage {
+  color: #858da1;
+  font-size: 10px;
+  text-align: right;
+}
+
+.status-distribution-empty {
+  padding: 24px 12px;
+  border-radius: 8px;
+  background: #fafbfe;
+  color: #858da1;
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .status-distribution-panel {
+    padding: 17px 14px;
+  }
+
+  .distribution-row {
+    grid-template-columns: 100px minmax(0, 1fr) 35px;
+    gap: 9px;
+  }
+
+  .distribution-label {
+    font-size: 10px;
+  }
+
+  .status-distribution-heading h2 {
+    font-size: 13px;
+  }
+}

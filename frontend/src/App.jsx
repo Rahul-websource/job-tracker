@@ -10,6 +10,7 @@ import {
   getApplicationHistory,
 } from './services/api'
 import ManagementPages from './ManagementPages'
+import InterviewsPage from './InterviewsPage'
 import './App.css'
 
 const navigation = [
@@ -17,6 +18,7 @@ const navigation = [
   { label: 'Applications', icon: '▤' },
   { label: 'Jobs', icon: '⌕' },
   { label: 'Companies', icon: '▥' },
+  { label: 'Interviews', icon: '◷' },
 ]
 
 function classifyFollowUpReminders(applications, now = Date.now()) {
@@ -618,7 +620,9 @@ async function updateStatus(applicationId, newStatus) {
           </div>
         </header>
 
-        {(activePage === 'Jobs' || activePage === 'Companies') ? (
+        {activePage === 'Interviews' ? (
+          <InterviewsPage token={session.token} applications={applications} />
+        ) : (activePage === 'Jobs' || activePage === 'Companies') ? (
           <ManagementPages page={activePage} token={session.token} />
         ) : (
         <section className="page-content">

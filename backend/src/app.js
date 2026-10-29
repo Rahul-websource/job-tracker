@@ -4,6 +4,7 @@ const express = require("express");
 const healthRoutes = require("./routes/health.routes");
 const companiesRoutes = require("./routes/companies.routes");
 const applicationsRoutes = require("./routes/applications.routes");
+const interviewsRoutes = require("./routes/interviews.routes");
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/companies", companiesRoutes);
 app.use("/api/v1/jobs", jobsRoutes);
 app.use("/api/v1/applications", applicationsRoutes);
+app.use("/api/v1/interviews", interviewsRoutes);
 // Handle unknown routes.
 app.use((req, res) => {
   res.status(404).json({

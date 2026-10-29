@@ -163,3 +163,41 @@ export async function deleteCompany(token, companyId) {
     },
   })
 }
+
+// Interview management
+export async function getInterviews(token) {
+  return apiRequest('/interviews', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+}
+
+export async function createInterview(token, interviewData) {
+  return apiRequest('/interviews', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(interviewData),
+  })
+}
+
+export async function updateInterview(token, interviewId, updates) {
+  return apiRequest(`/interviews/${interviewId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteInterview(token, interviewId) {
+  return apiRequest(`/interviews/${interviewId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  })
+}

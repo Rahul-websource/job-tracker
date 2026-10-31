@@ -993,3 +993,142 @@ tbody tr:hover { background: #fcfcff; }
     padding: 18px;
   }
 }
+
+/* Dashboard upcoming interviews */
+.dashboard-interviews-panel {
+  margin-bottom: 24px;
+  padding: 24px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border-color, #e9eaf0);
+  border-radius: 16px;
+}
+
+.dashboard-interviews-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.dashboard-interviews-heading h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+}
+
+.dashboard-interviews-heading p {
+  margin: 0;
+  color: #85899a;
+  font-size: 13px;
+}
+
+.dashboard-interviews-list {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-interview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #ececf2;
+  border-radius: 12px;
+  background: #fcfcfe;
+}
+
+.dashboard-interview-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dashboard-interview-main > strong {
+  color: #27283a;
+  font-size: 14px;
+}
+
+.dashboard-interview-main > span {
+  color: #777b8d;
+  font-size: 13px;
+}
+
+.dashboard-interview-main .dashboard-interview-round {
+  color: #7953b5;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-interview-date {
+  display: grid;
+  gap: 5px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.dashboard-interview-date strong {
+  color: #303146;
+  font-size: 13px;
+}
+
+.dashboard-interview-date time {
+  color: #85899a;
+  font-size: 12px;
+}
+
+.dashboard-interviews-empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  color: #777b8d;
+  background: #fafaff;
+  border: 1px dashed #dedfed;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.dashboard-interviews-empty strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #303146;
+}
+
+.dashboard-interviews-empty p {
+  margin: 0;
+}
+
+.dashboard-interviews-empty-icon {
+  font-size: 26px;
+  color: #7953b5;
+}
+
+.dashboard-interviews-empty .secondary-button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .dashboard-interviews-panel {
+    padding: 16px;
+  }
+
+  .dashboard-interviews-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-interview-item {
+    align-items: flex-start;
+  }
+
+  .dashboard-interviews-empty {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-interviews-empty .secondary-button {
+    margin-left: 0;
+  }
+}

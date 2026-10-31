@@ -67,6 +67,7 @@ export default function InterviewsPage({ token, applications = [] }) {
   const [form, setForm] = useState(emptyForm)
   const [search, setSearch] = useState('')
   const [outcomeFilter, setOutcomeFilter] = useState('all')
+  const [currentTime] = useState(() => Date.now())
 
   const loadInterviews = useCallback(async () => {
     setLoading(true)
@@ -85,8 +86,34 @@ export default function InterviewsPage({ token, applications = [] }) {
   }, [token])
 
   useEffect(() => {
-    loadInterviews()
-  }, [loadInterviews])
+    let cancelled = false
+
+    async function fetchInterviews() {
+      try {
+        const result = await getInterviews(token)
+
+        if (!cancelled) {
+          setInterviews(
+            Array.isArray(result.interviews) ? result.interviews : [],
+          )
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || 'Unable to load interviews.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchInterviews()
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
 
   function openCreateForm() {
     setEditingInterview(null)
@@ -201,7 +228,7 @@ export default function InterviewsPage({ token, applications = [] }) {
   const upcomingCount = interviews.filter(
     (interview) =>
       interview.outcome === 'scheduled' &&
-      new Date(interview.scheduled_at).getTime() >= Date.now(),
+      new Date(interview.scheduled_at).getTime() >= currentTime,
   ).length
 
   return (

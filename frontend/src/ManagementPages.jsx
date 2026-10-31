@@ -76,8 +76,49 @@ export default function ManagementPages({ page, token }) {
   }, [page, token, search, locationFilter, typeFilter])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    let cancelled = false
+
+    async function fetchData() {
+      try {
+        const companyResult = await getCompanies(token)
+
+        if (cancelled) return
+
+        setCompanies(
+          Array.isArray(companyResult.companies)
+            ? companyResult.companies
+            : [],
+        )
+
+        if (page === 'Jobs') {
+          const jobResult = await getJobs(token, {
+            search: search.trim(),
+            location: locationFilter.trim(),
+            employment_type: typeFilter,
+            limit: 100,
+          })
+
+          if (cancelled) return
+
+          setJobs(Array.isArray(jobResult.jobs) ? jobResult.jobs : [])
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || `Unable to load ${page.toLowerCase()}.`)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    fetchData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [page, token, search, locationFilter, typeFilter])
 
   function openNewJob() {
     setEditingJob(null)

@@ -8,6 +8,7 @@ import {
   createApplication,
   updateApplication,
   getApplicationHistory,
+  getInterviews,
 } from './services/api'
 import ManagementPages from './ManagementPages'
 import InterviewsPage from './InterviewsPage'
@@ -110,6 +111,10 @@ function App() {
   const [applications, setApplications] = useState([])
   const [loadingApplications, setLoadingApplications] = useState(false)
   const [applicationsError, setApplicationsError] = useState('')
+  const [dashboardInterviews, setDashboardInterviews] = useState([])
+  const [loadingDashboardInterviews, setLoadingDashboardInterviews] = useState(true)
+  const [dashboardInterviewsError, setDashboardInterviewsError] = useState('')
+  const [dashboardNow] = useState(() => Date.now())
   const [savingApplication, setSavingApplication] = useState(false)
   const [formError, setFormError] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -184,6 +189,41 @@ const [newApplication, setNewApplication] = useState({
     }
   }, [session?.token])
 
+  useEffect(() => {
+    if (!session?.token || activePage !== 'Dashboard') return
+
+    let cancelled = false
+
+    async function loadDashboardInterviews() {
+      try {
+        const result = await getInterviews(session.token)
+
+        if (!cancelled) {
+          setDashboardInterviews(
+            Array.isArray(result.interviews) ? result.interviews : [],
+          )
+          setDashboardInterviewsError('')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDashboardInterviewsError(
+            error.message || 'Unable to load upcoming interviews.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingDashboardInterviews(false)
+        }
+      }
+    }
+
+    loadDashboardInterviews()
+
+    return () => {
+      cancelled = true
+    }
+  }, [session?.token, activePage])
+
   if (!session?.token || !session?.user) {
     return <Auth onLogin={handleLogin} />
   }
@@ -210,6 +250,34 @@ const [newApplication, setNewApplication] = useState({
   const upcomingReminders = followUpReminders.filter(
     (item) => item.reminderCategory === 'upcoming'
   )
+
+  const upcomingInterviews = dashboardInterviews
+    .filter((interview) => {
+      const scheduledTime = new Date(interview.scheduled_at).getTime()
+
+      return (
+        interview.outcome === 'scheduled' &&
+        Number.isFinite(scheduledTime) &&
+        scheduledTime >= dashboardNow
+      )
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.scheduled_at).getTime() -
+        new Date(b.scheduled_at).getTime(),
+    )
+    .slice(0, 5)
+    .map((interview) => {
+      const application = applications.find(
+        (item) => String(item.id) === String(interview.application_id),
+      )
+
+      return {
+        ...interview,
+        company: application?.company || 'Unknown company',
+        role: application?.role || 'Untitled role',
+      }
+    })
 
   const totalApplications = applications.length
 
@@ -762,6 +830,85 @@ async function updateStatus(applicationId, newStatus) {
                         </div>
                       )}
                     </section>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {activePage === 'Dashboard' && (
+            <section className="dashboard-interviews-panel">
+              <div className="dashboard-interviews-heading">
+                <div>
+                  <h2>Upcoming Interviews</h2>
+                  <p>Your next scheduled interview appointments</p>
+                </div>
+                <button
+                  className="text-button"
+                  onClick={() => setActivePage('Interviews')}
+                >
+                  View all interviews <span>→</span>
+                </button>
+              </div>
+
+              {loadingDashboardInterviews ? (
+                <div className="dashboard-interviews-empty">
+                  Loading upcoming interviews...
+                </div>
+              ) : dashboardInterviewsError ? (
+                <div className="dashboard-interviews-empty" role="alert">
+                  {dashboardInterviewsError}
+                </div>
+              ) : upcomingInterviews.length === 0 ? (
+                <div className="dashboard-interviews-empty">
+                  <span className="dashboard-interviews-empty-icon">◷</span>
+                  <div>
+                    <strong>No upcoming interviews</strong>
+                    <p>Scheduled interviews will appear here when you add them.</p>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    onClick={() => setActivePage('Interviews')}
+                  >
+                    Schedule an interview
+                  </button>
+                </div>
+              ) : (
+                <div className="dashboard-interviews-list">
+                  {upcomingInterviews.map((interview) => (
+                    <article
+                      className="dashboard-interview-item"
+                      key={interview.id}
+                    >
+                      <div className="dashboard-interview-main">
+                        <strong>{interview.company}</strong>
+                        <span>{interview.role}</span>
+                        <span className="dashboard-interview-round">
+                          {interview.interview_round}
+                        </span>
+                      </div>
+                      <div className="dashboard-interview-date">
+                        <strong>
+                          {new Date(interview.scheduled_at).toLocaleDateString(
+                            'en-IN',
+                            {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            },
+                          )}
+                        </strong>
+                        <time dateTime={interview.scheduled_at}>
+                          {new Date(interview.scheduled_at).toLocaleTimeString(
+                            'en-IN',
+                            {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            },
+                          )}
+                        </time>
+                      </div>
+                    </article>
                   ))}
                 </div>
               )}

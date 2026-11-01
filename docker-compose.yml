@@ -1,0 +1,94 @@
+services:
+
+  db:
+    image: postgres:18-alpine
+    container_name: job-tracker-db
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Database name required}
+      POSTGRES_USER: ${POSTGRES_USER:?Database user required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+
+    ports:
+      - "127.0.0.1:5433:5432"
+
+    volumes:
+      - job_tracker_data:/var/lib/postgresql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/migrations/001_prevent_company_job_cascade.sql:/docker-entrypoint-initdb.d/02-migration.sql:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    networks:
+      - job-tracker-network
+
+  backend:
+    build:
+      context: ./backend
+
+    container_name: job-tracker-backend
+    restart: unless-stopped
+
+    env_file:
+      - .env.docker
+
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_SSL: "false"
+
+    expose:
+      - "3000"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health/db').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+    networks:
+      - job-tracker-network
+
+  frontend:
+    build:
+      context: ./frontend
+
+    container_name: job-tracker-frontend
+    restart: unless-stopped
+
+    ports:
+      - "8080:80"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    networks:
+      - job-tracker-network
+
+volumes:
+  job_tracker_data:
+
+networks:
+  job-tracker-network:
+    driver: bridge

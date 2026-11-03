@@ -622,8 +622,14 @@ async function updateStatus(applicationId, newStatus) {
     <div className="app-shell">
       <aside className="sidebar">
         <a className="brand" href="#dashboard" onClick={() => setActivePage('Dashboard')}>
-          <span className="brand-mark">J</span>
-          <span>Job<span className="brand-light">Track</span></span>
+          <span className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="7" width="18" height="14" rx="2.5" />
+              <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7" />
+              <path d="m8.5 14 2.2 2.2 4.8-5" />
+            </svg>
+          </span>
+          <span>Job<span className="brand-light"> Tracker</span></span>
         </a>
 
         <div className="workspace-label">WORKSPACE</div>

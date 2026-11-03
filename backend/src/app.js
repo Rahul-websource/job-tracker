@@ -1,6 +1,7 @@
 const authRoutes = require("./routes/auth.routes");
 const jobsRoutes = require("./routes/jobs.routes");
 const express = require("express");
+const helmet = require("helmet");
 const healthRoutes = require("./routes/health.routes");
 const companiesRoutes = require("./routes/companies.routes");
 const applicationsRoutes = require("./routes/applications.routes");
@@ -9,6 +10,10 @@ const interviewsRoutes = require("./routes/interviews.routes");
 const app = express();
 
 app.disable("x-powered-by");
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+app.use(helmet());
 
 app.use(express.json({ limit: "100kb" }));
 

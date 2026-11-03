@@ -6,15 +6,51 @@ Job Tracker is a full-stack web application designed to help job seekers organiz
 
 The platform allows users to manage companies, job opportunities, application progress, interview schedules, and application status history through a structured and user-friendly interface.
 
+
+## Application Screenshots
+
+Explore the main features of Job Tracker through the screenshots below.
+
+### Dashboard
+
+The dashboard provides an overview of job-search activity and application progress.
+
+![Job Tracker Dashboard Overview](docs/screenshots/01-dashboard-overview.png)
+
+![Job Tracker Dashboard Details](docs/screenshots/02-dashboard-details.png)
+
+### Application Management
+
+Create and manage job applications and track their recruitment status.
+
+![Add Application](docs/screenshots/03-add-application.png)
+
+![Applications List](docs/screenshots/04-applications-list.png)
+
+### Job Management
+
+View and edit job opportunity details.
+
+![Edit Job](docs/screenshots/05-edit-job.png)
+
+### Company Management
+
+Manage companies associated with job opportunities.
+
+![Companies Management](docs/screenshots/06-companies.png)
+
+### Interview Management
+
+Review interview schedules and manage interview details.
+
+![Interviews Management](docs/screenshots/07-interviews.png)
+
+![Schedule Interview](docs/screenshots/08-schedule-interview.png)
+
 ---
 
-## Live Demo
-
-**[Open Job Tracker](https://mono-comes-addresses-tonight.trycloudflare.com)**
-
-> **Note:** The application is currently accessible through a temporary Cloudflare Quick Tunnel. The URL and availability are not guaranteed and may change.
-
 ---
+
 
 ## Key Features
 
